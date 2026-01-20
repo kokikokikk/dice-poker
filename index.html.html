@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Dice Poker</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        body { background-color: #2c3e50; color: white; font-family: sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; }
+        .container { max-width: 600px; width: 95%; padding: 20px; }
+        .btn { padding: 10px 20px; border-radius: 5px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; }
+        .btn-green { background-color: #27ae60; color: white; }
+        .btn-blue { background-color: #2980b9; color: white; }
+        input { padding: 10px; font-size: 1rem; text-align: center; }
+        .dice-area { display: flex; justify-content: center; gap: 10px; margin: 20px 0; min-height: 60px; }
+        .die { width: 50px; height: 50px; background: white; color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 3px solid transparent; }
+        .die.held { background: #f1c40f; border-color: #e67e22; transform: translateY(-5px); }
+        .status { margin: 15px; font-size: 1.2rem; color: #f39c12; }
+        #setup-screen, #game-screen { display: none; }
+        .active { display: block !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎲 Online Dice Poker</h1>
+
+    <div id="setup-screen" class="active">
+        <p>友達と遊ぶための「部屋」を作ろう</p>
+        <button class="btn btn-green" onclick="createRoom()">部屋を作る (HOST)</button>
+        <br><br>
+        <p>または、友達の部屋IDを入力</p>
+        <input type="text" id="room-id-input" placeholder="部屋IDを入力">
+        <button class="btn btn-blue" onclick="joinRoom()">部屋に入る (JOIN)</button>
+        <p id="my-room-id" style="font-weight:bold; color:#f1c40f;"></p>
+    </div>
+
+    <div id="game-screen">
+        <div class="status">相手: <span id="opponent-status">待機中...</span></div>
+        <div class="dice-area" id="opponent-dice">
+            <div class="die">?</div><div class="die">?</div><div class="die">?</div><div class="die">?</div><div class="die">?</div>
+        </div>
+
+        <hr style="opacity:0.3">
+        
+        <div class="status">あなた: <span id="my-status">準備中</span></div>
+        <div class="dice-area" id="my-dice"></div>
+        
+        <button id="roll-btn" class="btn btn-green" onclick="rollAction()">ROLL (3回)</button>
+        <p id="msg">クリックしてHOLD / ROLLで確定</p>
+    </div>
+</div>
+
+<script>
+    // ▼▼▼▼▼ ここを自分の設定に書き換える ▼▼▼▼▼
+
+
+// Import the functions you need from the SDKs you need
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD0micFDoWAHMpZdY2IPhjW3v2XLqloJX8",
+  authDomain: "dice-poker-e9021.firebaseapp.com",
+  databaseURL: "https://dice-poker-e9021-default-rtdb.firebaseio.com",
+  projectId: "dice-poker-e9021",
+  storageBucket: "dice-poker-e9021.firebasestorage.app",
+  messagingSenderId: "730416248000",
+  appId: "1:730416248000:web:349072ce1b17bcc139e925",
+  measurementId: "G-KP58T1CMFN"
+};
+
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    // Firebase初期化
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.database();
+
+    let roomId = null;
+    let myRole = null; // 'host' or 'guest'
+    let myDice = [1,1,1,1,1];
+    let heldDice = [false,false,false,false,false];
+    let rollCount = 3;
+
+    // 画面切り替え
+    const setupScreen = document.getElementById('setup-screen');
+    const gameScreen = document.getElementById('game-screen');
+    const myDiceDiv = document.getElementById('my-dice');
+    const opDiceDiv = document.getElementById('opponent-dice');
+
+    // ----------------------
+    // 部屋の作成・入室処理
+    // ----------------------
+    function createRoom() {
+        // ランダムな部屋ID (数字4桁)
+        roomId = Math.floor(1000 + Math.random() * 9000).toString();
+        myRole = 'host';
+        
+        // DBに部屋を作成
+        db.ref('rooms/' + roomId).set({
+            host: { dice: [0,0,0,0,0], status: 'Thinking' },
+            guest: { dice: [0,0,0,0,0], status: 'Waiting' },
+            turn: 1
+        });
+
+        document.getElementById('my-room-id').innerText = "あなたの部屋ID: " + roomId + "\n友達に教えてあげて！";
+        listenToRoom();
+        startGameUI();
+    }
+
+    function joinRoom() {
+        roomId = document.getElementById('room-id-input').value;
+        if (!roomId) return alert("部屋IDを入れてね");
+        myRole = 'guest';
+        listenToRoom();
+        startGameUI();
+    }
+
+    function startGameUI() {
+        setupScreen.classList.remove('active');
+        gameScreen.classList.add('active');
+        initMyDice();
+    }
+
+    // ----------------------
+    // ゲームロジック
+    // ----------------------
+    function initMyDice() {
+        myDiceDiv.innerHTML = '';
+        for(let i=0; i<5; i++){
+            let d = document.createElement('div');
+            d.className = 'die';
+            d.innerText = '-';
+            d.onclick = () => toggleHold(i, d);
+            myDiceDiv.appendChild(d);
+        }
+    }
+
+    function toggleHold(i, el) {
+        if(rollCount <= 0 || rollCount === 3) return;
+        heldDice[i] = !heldDice[i];
+        if(heldDice[i]) el.classList.add('held');
+        else el.classList.remove('held');
+    }
+
+    function rollAction() {
+        if(rollCount <= 0) return;
+
+        // サイコロを振る
+        for(let i=0; i<5; i++){
+            if(!heldDice[i]) myDice[i] = Math.floor(Math.random()*6)+1;
+        }
+        
+        rollCount--;
+        updateMyVisuals();
+
+        // Firebaseに自分の状態を送信！
+        let statusText = (rollCount === 0) ? "確定！" : "考え中...";
+        db.ref(`rooms/${roomId}/${myRole}`).set({
+            dice: myDice,
+            status: statusText
+        });
+
+        document.getElementById('roll-btn').innerText = (rollCount > 0) ? `REROLL (あと${rollCount}回)` : "勝負待ち...";
+        if(rollCount === 0) {
+            document.getElementById('roll-btn').disabled = true;
+            document.getElementById('roll-btn').style.backgroundColor = "#7f8c8d";
+        }
+    }
+
+    function updateMyVisuals() {
+        let dies = myDiceDiv.children;
+        for(let i=0; i<5; i++) dies[i].innerText = myDice[i];
+    }
+
+    // ----------------------
+    // リアルタイム通信 (受信)
+    // ----------------------
+    function listenToRoom() {
+        // 部屋全体の変更を監視する
+        db.ref('rooms/' + roomId).on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+
+            // 相手のデータを取得
+            let opponentRole = (myRole === 'host') ? 'guest' : 'host';
+            let opData = data[opponentRole];
+
+            if (opData) {
+                document.getElementById('opponent-status').innerText = opData.status;
+                
+                // 相手のサイコロを表示
+                opDiceDiv.innerHTML = '';
+                if (opData.dice) {
+                    opData.dice.forEach(val => {
+                        let d = document.createElement('div');
+                        d.className = 'die';
+                        // 相手が「確定」するまでは中身を隠す（?にする）仕様
+                        // 見せたいなら val をそのまま表示
+                        if (opData.status === "確定！") {
+                            d.innerText = val;
+                            d.style.backgroundColor = "#bdc3c7";
+                        } else {
+                            d.innerText = "?";
+                        }
+                        opDiceDiv.appendChild(d);
+                    });
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>
