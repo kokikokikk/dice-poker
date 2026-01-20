@@ -2,18 +2,23 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dice Poker Ex</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
     <style>
-        body { background-color: #2c3e50; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding-bottom: 50px; user-select: none; }
+        /* タップ遅延を消す魔法のCSS */
+        body { 
+            background-color: #2c3e50; color: white; font-family: 'Segoe UI', sans-serif; 
+            text-align: center; display: flex; flex-direction: column; align-items: center; 
+            min-height: 100vh; margin: 0; padding-bottom: 50px; user-select: none; 
+            touch-action: manipulation; /* スマホでキビキビ動く設定 */
+        }
         .container { max-width: 600px; width: 95%; padding: 20px; }
         
-        /* ボタン類 */
-        .btn { padding: 12px 20px; border-radius: 8px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; width: 100%; max-width: 300px; transition: 0.1s; }
-        .btn:active { transform: scale(0.98); }
+        .btn { padding: 12px 20px; border-radius: 8px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; width: 100%; max-width: 300px; transition: 0.1s; touch-action: manipulation; }
+        .btn:active { transform: scale(0.96); opacity: 0.9; }
         .btn-green { background-color: #27ae60; color: white; }
         .btn-blue { background-color: #2980b9; color: white; }
         .btn-orange { background-color: #e67e22; color: white; }
@@ -21,33 +26,32 @@
         .btn-gray { background-color: #7f8c8d; color: white; }
         .btn-small { width: auto; font-size: 0.9rem; padding: 5px 15px; }
 
-        /* 通貨表示 */
         .wallet-bar { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
         .currency { padding: 8px 20px; border-radius: 50px; font-weight: bold; font-size: 1.1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 5px; }
         .gold { background-color: #f1c40f; color: #2c3e50; border: 2px solid #f39c12; }
         .silver { background-color: #bdc3c7; color: #2c3e50; border: 2px solid #95a5a6; }
 
-        /* ダイス */
         .dice-area { display: flex; justify-content: center; gap: 8px; margin: 20px 0; min-height: 60px; }
-        .die { width: 50px; height: 50px; background: white; color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 3px solid #bdc3c7; cursor: pointer; transition: 0.1s; box-shadow: 0 3px 0 #95a5a6; }
+        .die { width: 50px; height: 50px; background: white; color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 3px solid #bdc3c7; cursor: pointer; transition: 0.1s; box-shadow: 0 3px 0 #95a5a6; touch-action: manipulation; }
         .die.held { background: #f1c40f; border-color: #e67e22; transform: translateY(-5px); box-shadow: 0 8px 5px rgba(0,0,0,0.2); }
         .die.locked { background: #ecf0f1; color: #95a5a6; cursor: default; }
         .die.cpu { background: #e0e0e0; cursor: default; }
 
-        /* モーダル (ルール説明) */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
         .modal { background: #34495e; padding: 20px; border-radius: 10px; max-width: 90%; max-height: 80%; overflow-y: auto; text-align: left; border: 2px solid #f1c40f; }
         .modal h2 { margin-top: 0; color: #f1c40f; text-align: center; }
         .hand-list { font-size: 0.9rem; line-height: 1.6; }
         .hand-rank { font-weight: bold; color: #e67e22; }
 
-        /* 画面切り替え */
         .screen { display: none; }
         .active { display: block !important; }
 
         input { padding: 10px; font-size: 1rem; text-align: center; border-radius: 5px; border: 1px solid #ccc; width: 80%; max-width: 250px; }
         .status { margin: 10px; font-size: 1.2rem; color: #f39c12; font-weight: bold; }
         .info-text { font-size: 0.9rem; color: #bdc3c7; margin: 5px 0; }
+        
+        /* 再戦ボタンエリア */
+        .action-row { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -76,11 +80,12 @@
         <hr style="border-color:rgba(255,255,255,0.1); margin: 20px 0;">
 
         <h3>🤖 CPU対戦 (Silver)</h3>
-        <p class="info-text">参加費: 50 Silver</p>
-        <select id="cpu-level" style="padding:10px; border-radius:5px; font-size:1rem; width:200px; margin-bottom:10px;">
-            <option value="1">Level 1: 初心者 (Easy)</option>
-            <option value="2" selected>Level 2: 一般人 (Normal)</option>
-            <option value="3">Level 3: 賭博師 (Hard)</option>
+        <p class="info-text">参加費: <span id="cpu-cost-display" style="color:#f1c40f; font-weight:bold;">50</span> Silver</p>
+        
+        <select id="cpu-level" onchange="updateCpuCost()" style="padding:10px; border-radius:5px; font-size:1rem; width:250px; margin-bottom:10px;">
+            <option value="1">Level 1: 初心者 (20 Silver)</option>
+            <option value="2" selected>Level 2: 一般人 (50 Silver)</option>
+            <option value="3">Level 3: 賭博師 (100 Silver)</option>
         </select>
         <br>
         <button class="btn btn-orange" onclick="startCpuGame()">CPUと戦う</button>
@@ -111,7 +116,13 @@
         </div>
 
         <div id="action-area" style="margin-top:20px; display:none;">
-            <button class="btn btn-gray" onclick="backToLobby()">🏠 ロビーに戻る</button>
+            <div class="action-row" id="cpu-actions" style="display:none;">
+                <button class="btn btn-orange" onclick="restartCpuGame()">🔄 もう一回 ($<span id="replay-cost"></span>)</button>
+                <button class="btn btn-gray" onclick="backToLobby()">🏠 ロビーへ</button>
+            </div>
+            <div class="action-row" id="multi-actions" style="display:none;">
+                <button class="btn btn-gray" onclick="backToLobby()">🏠 ロビーへ</button>
+            </div>
         </div>
     </div>
 </div>
@@ -120,7 +131,7 @@
     <div class="modal" onclick="event.stopPropagation()">
         <h2>📖 ルール & 役一覧</h2>
         <p>5つのサイコロを最大3回振って、より強い役を作った方の勝ちです。<br>
-        1投目・2投目の後に、残したいサイコロをクリックして「HOLD（固定）」できます。</p>
+        残したいサイコロをタップして「HOLD」し、役を揃えましょう。</p>
         
         <h3>🏆 役の強さ (上ほど強い)</h3>
         <div class="hand-list">
@@ -150,28 +161,31 @@
       appId: "1:730416248000:web:349072ce1b17bcc139e925",
       measurementId: "G-KP58T1CMFN"
     };
+
     // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // --- ゲーム状態変数 ---
+    // 賭け金設定
+    const BET_GOLD = 100;
+    const CPU_BETS = { 1: 20, 2: 50, 3: 100 }; // レベル別賭け金
+
     let myGold = 1000;
     let mySilver = 500;
-    const BET_GOLD = 100;
-    const BET_SILVER = 50;
-
-    let gameMode = null; // 'multi' or 'cpu'
+    
+    let gameMode = null; 
     let cpuLevel = 2;
+    let currentCpuBet = 50;
+
     let roomId = null;
-    let myRole = null; // 'host' or 'guest' (multi only)
+    let myRole = null; 
     
     let myDice = [1,1,1,1,1];
     let opDice = [1,1,1,1,1];
     let heldDice = [false,false,false,false,false];
     let rollCount = 3;
     let isGameFinished = false;
-    let lastResetTime = 0;
 
     // DOM要素
     const lobbyScreen = document.getElementById('lobby-screen');
@@ -183,9 +197,10 @@
     const actionArea = document.getElementById('action-area');
     const opStatus = document.getElementById('op-status');
     const myStatus = document.getElementById('my-status');
+    const cpuCostDisplay = document.getElementById('cpu-cost-display');
 
-    // 初期化
     loadWallet();
+    updateCpuCost(); // 初期表示更新
 
     function loadWallet() {
         myGold = parseInt(localStorage.getItem('dp_gold') || 1000);
@@ -212,36 +227,55 @@
         document.getElementById('rule-modal').style.display = show ? 'flex' : 'none';
     }
 
-    // --- ゲーム開始フロー ---
-    
+    // レベル変更時に賭け金表示を変える
+    function updateCpuCost() {
+        let lv = parseInt(document.getElementById('cpu-level').value);
+        cpuCostDisplay.innerText = CPU_BETS[lv];
+    }
+
     function backToLobby() {
-        // マルチプレイなら切断処理
         if(gameMode === 'multi' && roomId) {
             db.ref(`rooms/${roomId}/${myRole}`).remove();
         }
         window.location.reload();
     }
 
-    // 1. CPU戦開始
+    // --- 1. CPU戦 ---
     function startCpuGame() {
-        if(mySilver < BET_SILVER) return alert("Silverコインが足りません！");
-        gameMode = 'cpu';
         cpuLevel = parseInt(document.getElementById('cpu-level').value);
+        currentCpuBet = CPU_BETS[cpuLevel];
+
+        if(mySilver < currentCpuBet) return alert("Silverコインが足りません！");
         
-        mySilver -= BET_SILVER; // 参加費徴収
+        mySilver -= currentCpuBet;
         saveWallet();
 
-        document.getElementById('game-info').innerText = "Mode: CPU Battle (Level " + cpuLevel + ")";
+        gameMode = 'cpu';
+        document.getElementById('game-info').innerText = `Mode: CPU Battle (Lv.${cpuLevel}) Bet:${currentCpuBet}`;
+        
         startGameCommon();
         
-        // CPU初期化
+        // CPU用UI
+        document.getElementById('cpu-actions').style.display = 'flex';
+        document.getElementById('multi-actions').style.display = 'none';
+        document.getElementById('replay-cost').innerText = currentCpuBet;
+
         opStatus.innerText = "思考中...";
-        updateOpDiceVisuals([0,0,0,0,0], false); // 隠す
-        
-        // プレイヤーの操作待ちへ
+        updateOpDiceVisuals([0,0,0,0,0], false);
     }
 
-    // 2. マルチプレイ開始
+    // 再戦処理
+    function restartCpuGame() {
+        if(mySilver < currentCpuBet) return alert("Silverコインが足りません！");
+        mySilver -= currentCpuBet;
+        saveWallet();
+        
+        startGameCommon();
+        opStatus.innerText = "思考中...";
+        updateOpDiceVisuals([0,0,0,0,0], false);
+    }
+
+    // --- 2. マルチプレイ ---
     function setupMultiplayer(type) {
         if(myGold < BET_GOLD) return alert("Goldチップが足りません！");
         gameMode = 'multi';
@@ -268,20 +302,24 @@
             };
             db.ref('rooms/' + roomId).set(updates).then(onMultiReady);
         } else {
-            // ゲスト参加時は自分の枠だけ確保
             db.ref(`rooms/${roomId}/guest`).set({ dice: [0,0,0,0,0], status: 'Thinking' }).then(onMultiReady);
         }
     }
 
     function onMultiReady() {
-        myGold -= BET_GOLD; // 参加費
+        myGold -= BET_GOLD;
         saveWallet();
         document.getElementById('game-info').innerText = "Mode: Online (Room " + roomId + ")";
+        
         startGameCommon();
+        
+        document.getElementById('cpu-actions').style.display = 'none';
+        document.getElementById('multi-actions').style.display = 'flex';
+
         listenToRoom();
     }
 
-    // --- ゲーム共通処理 ---
+    // --- 共通ゲーム処理 ---
     function startGameCommon() {
         lobbyScreen.classList.remove('active');
         gameScreen.classList.add('active');
@@ -292,7 +330,6 @@
         resultMsg.innerText = "";
         actionArea.style.display = 'none';
         
-        // UIリセット
         rollBtn.disabled = false;
         rollBtn.innerText = "ROLL (3回)";
         rollBtn.className = "btn btn-green";
@@ -321,17 +358,14 @@
         if(heldDice[i]) el.classList.add('held'); else el.classList.remove('held');
     }
 
-    // プレイヤーのロールアクション
     function rollAction() {
         if(rollCount <= 0) return;
         
-        // ダイスを振る
         for(let i=0; i<5; i++){
             if(!heldDice[i]) myDice[i] = Math.floor(Math.random()*6)+1;
         }
         rollCount--;
         
-        // 画面更新
         let dies = myDiceDiv.children;
         for(let i=0; i<5; i++) dies[i].innerText = myDice[i];
         
@@ -342,59 +376,35 @@
         let statusText = (rollCount === 0) ? "確定！" : "考え中...";
         myStatus.innerText = statusText;
 
-        // ボタン更新
         rollBtn.innerText = (rollCount > 0) ? `REROLL (あと${rollCount}回)` : "勝負待ち...";
         if(rollCount === 0) {
             rollBtn.disabled = true;
             rollBtn.className = "btn btn-gray";
         }
 
-        // --- モード別処理 ---
         if(gameMode === 'multi') {
-            // Firebase送信
-            db.ref(`rooms/${roomId}/${myRole}`).update({
-                dice: myDice,
-                status: statusText
-            });
+            db.ref(`rooms/${roomId}/${myRole}`).update({ dice: myDice, status: statusText });
         } else {
-            // CPU戦進行
             runCpuProcess();
         }
     }
 
-    // --- CPUロジック ---
     function runCpuProcess() {
         if(isGameFinished) return;
-
-        // プレイヤーが確定したらCPUも結果を出す（簡易化のため、プレイヤーが終わるまで待つ仕様にします）
-        // もしリアルタイム感を出したいなら、プレイヤーのrollCountに合わせてCPUも内部でrollCount減らす演出が必要ですが、
-        // 今回は「プレイヤーが確定」→「CPUが一瞬で3回振って結果発表」の流れにします。
-        
         if(rollCount === 0) {
             opStatus.innerText = "演算中...";
             setTimeout(() => {
-                // CPUが3回振るシミュレーション
                 let cpuD = [0,0,0,0,0];
                 let cpuHeld = [false,false,false,false,false];
-                
                 for(let turn=0; turn<3; turn++) {
-                    // Roll
-                    for(let i=0; i<5; i++) {
-                        if(!cpuHeld[i]) cpuD[i] = Math.floor(Math.random()*6)+1;
-                    }
-                    
-                    if(turn < 2) { // 最後のターン以外はHold判断
-                        cpuHeld = decideCpuHold(cpuD, cpuLevel);
-                    }
+                    for(let i=0; i<5; i++) { if(!cpuHeld[i]) cpuD[i] = Math.floor(Math.random()*6)+1; }
+                    if(turn < 2) cpuHeld = decideCpuHold(cpuD, cpuLevel);
                 }
-                
-                // 結果表示
                 opDice = cpuD;
                 updateOpDiceVisuals(opDice, true);
                 opStatus.innerText = "確定！";
-                
                 finishGame(myDice, opDice);
-            }, 1000);
+            }, 800); // 演出待ち
         } else {
             opStatus.innerText = "相手も考え中...";
         }
@@ -405,49 +415,36 @@
         let counts = {};
         dice.forEach(x => { counts[x] = (counts[x] || 0) + 1; });
         
-        if(level === 1) { // Easy: ランダムか、6だけ残す
+        if(level === 1) { // Easy
             dice.forEach((val, i) => { if(val === 6 || Math.random() > 0.7) held[i] = true; });
         }
-        else if (level === 2) { // Normal: ペア以上は残す
+        else if (level === 2) { // Normal
             dice.forEach((val, i) => { if(counts[val] >= 2) held[i] = true; });
         }
-        else { // Hard: 役作り優先
-            // ストレート狙い判定は複雑なので、基本は「重複が多い数字」or「重複がないなら高い数字」を残す
+        else { // Hard
             let maxCount = Math.max(...Object.values(counts));
             if(maxCount >= 2) {
-                // ペア以上があればそれを固める
                 dice.forEach((val, i) => { if(counts[val] >= 2) held[i] = true; });
             } else {
-                // バラバラならストレート狙いかHighCard狙い（4以上を残す）
                 dice.forEach((val, i) => { if(val >= 4) held[i] = true; });
             }
         }
         return held;
     }
 
-    // --- マルチプレイ監視 ---
     function listenToRoom() {
         db.ref('rooms/' + roomId).on('value', snap => {
             const data = snap.val();
             if(!data || isGameFinished) return;
-
             let opRole = (myRole === 'host') ? 'guest' : 'host';
             let opData = data[opRole];
-
             if(opData) {
                 opStatus.innerText = opData.status;
-                
-                // 相手が確定するまでダイスは隠す
-                if(opData.status === "確定！") {
-                    opDice = opData.dice;
-                }
-                
-                // 自分の状態も確認
+                if(opData.status === "確定！") opDice = opData.dice;
                 if(rollCount === 0 && opData.status === "確定！" && !isGameFinished) {
                     updateOpDiceVisuals(opDice, true);
                     finishGame(myDice, opDice);
                 } else {
-                    // まだ途中なら隠して表示
                     updateOpDiceVisuals(opData.dice || [0,0,0,0,0], false);
                 }
             }
@@ -465,7 +462,6 @@
         });
     }
 
-    // --- 勝敗判定 ---
     function finishGame(myD, opD) {
         isGameFinished = true;
         let myHand = getHand(myD);
@@ -474,10 +470,9 @@
         document.getElementById('my-hand-name').innerText = myHand.name;
         document.getElementById('op-hand-name').innerText = opHand.name;
 
-        let winAmount = 0;
         let isWin = false;
         
-        if(myHand.rank > opHand.rank || (myHand.rank === opHand.rank && myHand.sum > opHand.sum)) { // 簡易的に同ランクなら合計値勝負
+        if(myHand.rank > opHand.rank || (myHand.rank === opHand.rank && myHand.sum > opHand.sum)) {
             isWin = true;
             resultMsg.innerText = "🏆 YOU WIN!!";
             resultMsg.style.color = "#f1c40f";
@@ -489,20 +484,17 @@
             resultMsg.style.color = "white";
         }
 
-        // 報酬計算
         if(gameMode === 'cpu') {
             if(isWin) {
-                // CPU戦はオッズ2倍(参加費50戻り+50勝ち=100) + レベルボーナス
                 let bonus = (cpuLevel - 1) * 20; 
-                let reward = (BET_SILVER * 2) + bonus;
+                let reward = (currentCpuBet * 2) + bonus;
                 mySilver += reward;
-                resultMsg.innerText += ` (+${reward - BET_SILVER} Silver)`;
+                resultMsg.innerText += ` (+${reward - currentCpuBet} Silver)`;
             } else if (resultMsg.innerText.includes("DRAW")) {
-                mySilver += BET_SILVER; // 引き分けは返金
+                mySilver += currentCpuBet;
             }
         } else {
             if(isWin) {
-                // マルチは総取り (参加費100 * 2 = 200)
                 myGold += (BET_GOLD * 2);
                 resultMsg.innerText += ` (+${BET_GOLD} Gold)`;
             } else if (resultMsg.innerText.includes("DRAW")) {
