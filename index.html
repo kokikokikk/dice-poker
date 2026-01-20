@@ -133,6 +133,7 @@
 
         <div id="cancel-wait-area" style="margin-top:20px; display:none;">
             <p>対戦相手を待っています...</p>
+            <p style="font-size:0.8rem;">ID: <span id="room-id-display" style="font-weight:bold; color:#f1c40f;"></span> を友達に教えてください</p>
             <button class="btn btn-red" onclick="cancelHost()">部屋を解散して戻る (返金)</button>
         </div>
 
@@ -172,7 +173,7 @@
 </div>
 
 <script>
-    // ▼▼▼▼▼ ここだけ自分の設定に書き換えてください ▼▼▼▼▼
+    // ▼▼▼▼▼ User Configuration ▼▼▼▼▼
     const firebaseConfig = {
       apiKey: "AIzaSyD0micFDoWAHMpZdY2IPhjW3v2XLqloJX8",
       authDomain: "dice-poker-e9021.firebaseapp.com",
@@ -183,12 +184,12 @@
       appId: "1:730416248000:web:349072ce1b17bcc139e925",
       measurementId: "G-KP58T1CMFN"
     };
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // 賭け金設定
+    // Settings
     const BET_GOLD = 100;
     const CPU_BETS = { 1: 20, 2: 50, 3: 100 };
 
@@ -209,7 +210,7 @@
     let rollCount = 3;
     let isGameFinished = false;
 
-    // DOM要素
+    // DOM Elements
     const lobbyScreen = document.getElementById('lobby-screen');
     const gameScreen = document.getElementById('game-screen');
     const myDiceDiv = document.getElementById('my-dice-area');
@@ -249,16 +250,17 @@
         document.getElementById('disp-silver').innerText = mySilver;
     }
     
-    // リセット機能（修正済み）
     function resetSilver() {
         if(!confirm("CPU対戦用のコイン(Silver)を\n初期値(500)に戻しますか？")) return;
         mySilver = 500;
         saveWallet();
+        updateWalletUI();
     }
     function resetGold() {
         if(!confirm("対人戦用のチップ(Gold)を\n初期値(1000)に戻しますか？")) return;
         myGold = 1000;
         saveWallet();
+        updateWalletUI();
     }
 
     function toggleRuleModal(show) {
@@ -270,12 +272,13 @@
     }
     function backToLobby() {
         if(gameMode === 'multi' && roomId) {
+            // 切断処理：自分のデータを消す
             db.ref(`rooms/${roomId}/${myRole}`).remove();
         }
         window.location.reload();
     }
 
-    // --- 1. CPU戦 ---
+    // --- 1. CPU Mode ---
     function startCpuGame() {
         saveName();
         cpuLevel = parseInt(document.getElementById('cpu-level').value);
@@ -312,7 +315,7 @@
         updateOpDiceVisuals([0,0,0,0,0], false);
     }
 
-    // --- 2. マルチプレイ ---
+    // --- 2. Multiplayer Mode ---
     function setupMultiplayer(type) {
         saveName();
         if(myGold < BET_GOLD) return alert("Goldチップが足りません！");
@@ -331,7 +334,6 @@
     }
 
     function initMultiDB() {
-        // 名前と所持金も含めて送信
         let playerData = { 
             dice: [0,0,0,0,0], 
             status: 'Thinking', 
@@ -340,15 +342,23 @@
         };
 
         if(myRole === 'host') {
+            // ホストは部屋自体を作成
             let updates = {
-                resetSignal: Date.now(),
-                host: playerData
-                // guestはまだ空
+                host: playerData,
+                guest: null // ゲストはまだいない
             };
             db.ref('rooms/' + roomId).set(updates).then(onMultiReady);
         } else {
-            // Guestとして参加
-            db.ref(`rooms/${roomId}/guest`).set(playerData).then(onMultiReady);
+            // ゲストは部屋があるか確認してから入室
+            db.ref('rooms/' + roomId).once('value', snapshot => {
+                if (!snapshot.exists()) {
+                    alert("その部屋IDは見つかりません。");
+                    window.location.reload();
+                    return;
+                }
+                // 部屋があれば自分のデータを書き込む
+                db.ref(`rooms/${roomId}/guest`).set(playerData).then(onMultiReady);
+            });
         }
     }
 
@@ -356,13 +366,13 @@
         myGold -= BET_GOLD;
         saveWallet();
         document.getElementById('game-info').innerText = "Mode: Online (Room " + roomId + ")";
+        document.getElementById('room-id-display').innerText = roomId;
         
         startGameCommon();
         
         document.getElementById('cpu-actions').style.display = 'none';
         document.getElementById('multi-actions').style.display = 'flex';
         
-        // Hostなら「解散ボタン」を表示（相手が来るまで）
         if(myRole === 'host') {
             cancelWaitArea.style.display = 'block';
         } else {
@@ -372,30 +382,28 @@
         listenToRoom();
     }
 
-    // ホストが待機中に部屋を消す
     function cancelHost() {
         if(!confirm("部屋を解散してロビーに戻りますか？\n(参加費は返金されます)")) return;
         
-        db.ref('rooms/' + roomId).remove();
-        myGold += BET_GOLD; // 返金
+        db.ref('rooms/' + roomId).remove(); // 部屋ごと削除
+        myGold += BET_GOLD;
         saveWallet();
         window.location.reload();
     }
 
-    // マルチプレイの再戦
     function restartMultiGame() {
         if(myGold < BET_GOLD) return alert("Goldチップが足りません！");
         
         myGold -= BET_GOLD;
         saveWallet();
 
-        // 自分の状態をリセット
+        // 画面をリセット
         startGameCommon();
         
-        // 再戦時はキャンセルボタンは出さない（相手がいるはずなので）
+        // HostもGuestも「キャンセル待ち」は出さない（既に接続済みだから）
         cancelWaitArea.style.display = 'none';
 
-        // Firebase更新
+        // Firebase上の自分の状態を「Thinking」に戻す
         db.ref(`rooms/${roomId}/${myRole}`).update({
             dice: [0,0,0,0,0],
             status: 'Thinking',
@@ -404,13 +412,14 @@
         });
     }
 
+    // 部屋の状態を監視（ここが一番大事な同期処理！）
     function listenToRoom() {
         db.ref('rooms/' + roomId).on('value', snap => {
             const data = snap.val();
-            // 部屋が消された場合（ホストが解散など）
+            // 部屋が消された場合
             if(!data) {
                 if(!isGameFinished && gameMode === 'multi') {
-                    alert("部屋が解散されました。");
+                    alert("部屋が解散されました。ロビーに戻ります。");
                     window.location.reload();
                 }
                 return;
@@ -420,35 +429,38 @@
             let opData = data[opRole];
 
             if(opData) {
-                // 相手が来たので解散ボタンを隠す
+                // 相手がいる
                 if(myRole === 'host') cancelWaitArea.style.display = 'none';
 
-                // 相手情報の表示
                 opNameDisp.innerText = opData.name || "Unknown";
                 opGoldDisp.innerText = "💰" + (opData.gold || 0);
-
                 opStatus.innerText = opData.status;
+
+                // 相手が「確定」している場合、サイコロデータを受け取る
                 if(opData.status === "確定！") opDice = opData.dice;
 
-                // 両者確定判定
+                // 両者「確定」で、まだ勝負がついてなければ決着
                 if(rollCount === 0 && opData.status === "確定！" && !isGameFinished) {
                     updateOpDiceVisuals(opDice, true);
                     finishGame(myDice, opDice);
-                } else {
-                    // 途中経過（隠して表示）
+                } else if (!isGameFinished) {
+                    // まだ勝負中なら、相手のサイコロは隠す
                     updateOpDiceVisuals(opData.dice || [0,0,0,0,0], false);
                 }
             } else {
-                // 相手がいない場合
+                // 相手がまだいない、または抜けた
                 opNameDisp.innerText = "Waiting...";
                 opGoldDisp.innerText = "";
                 opStatus.innerText = "対戦相手待ち...";
                 updateOpDiceVisuals([0,0,0,0,0], false);
+                
+                // もし自分がHostなら待機画面を出す
+                if(myRole === 'host' && !isGameFinished) cancelWaitArea.style.display = 'block';
             }
         });
     }
 
-    // --- 共通ゲーム処理 ---
+    // --- Common Game Logic ---
     function startGameCommon() {
         lobbyScreen.classList.remove('active');
         gameScreen.classList.add('active');
@@ -512,10 +524,11 @@
         }
 
         if(gameMode === 'multi') {
+            // Firebaseに自分の状態を送る
             db.ref(`rooms/${roomId}/${myRole}`).update({ 
                 dice: myDice, 
                 status: statusText,
-                gold: myGold // 金額変動も送る
+                gold: myGold 
             });
         } else {
             runCpuProcess();
