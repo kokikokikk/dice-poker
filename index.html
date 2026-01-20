@@ -3,104 +3,138 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Online Dice Poker</title>
+    <title>Dice Poker Ex</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
     <style>
-        body { background-color: #2c3e50; color: white; font-family: sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding-bottom: 50px; }
-        .container { max-width: 800px; width: 95%; padding: 20px; }
-        .btn { padding: 10px 20px; border-radius: 5px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; }
+        body { background-color: #2c3e50; color: white; font-family: 'Segoe UI', sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding-bottom: 50px; user-select: none; }
+        .container { max-width: 600px; width: 95%; padding: 20px; }
+        
+        /* ボタン類 */
+        .btn { padding: 12px 20px; border-radius: 8px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; width: 100%; max-width: 300px; transition: 0.1s; }
+        .btn:active { transform: scale(0.98); }
         .btn-green { background-color: #27ae60; color: white; }
         .btn-blue { background-color: #2980b9; color: white; }
-        
-        .action-area { display: none; margin-top: 20px; gap: 10px; justify-content: center; }
-        .btn-rematch { background-color: #e74c3c; color: white; flex: 1; padding: 15px; font-size: 1.1rem; box-shadow: 0 4px 0 #c0392b; }
-        .btn-rematch:active { transform: translateY(4px); box-shadow: none; }
-        .btn-lobby { background-color: #95a5a6; color: white; flex: 1; padding: 15px; font-size: 1.1rem; box-shadow: 0 4px 0 #7f8c8d; }
-        .btn-lobby:active { transform: translateY(4px); box-shadow: none; }
+        .btn-orange { background-color: #e67e22; color: white; }
+        .btn-red { background-color: #c0392b; color: white; }
+        .btn-gray { background-color: #7f8c8d; color: white; }
+        .btn-small { width: auto; font-size: 0.9rem; padding: 5px 15px; }
 
-        input { padding: 10px; font-size: 1rem; text-align: center; border-radius: 5px; border: 1px solid #ccc; width: 80%; max-width: 300px; margin-bottom: 10px; }
-        
-        /* 自分エリア */
-        .my-section { background: rgba(0,0,0,0.2); padding: 20px; border-radius: 15px; margin-top: 20px; }
-        .dice-area { display: flex; justify-content: center; gap: 10px; margin: 20px 0; min-height: 60px; }
-        .die { width: 50px; height: 50px; background: white; color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 3px solid transparent; }
-        .die.held { background: #f1c40f; border-color: #e67e22; transform: translateY(-5px); }
-        
-        /* 相手エリア */
-        .opponents-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 20px; }
-        .opponent-card { background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px; width: 150px; text-align: center; position: relative; }
-        .op-name { font-weight: bold; font-size: 0.9rem; color: #ecf0f1; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .op-dice-area { display: flex; justify-content: center; gap: 3px; margin-top: 5px; }
-        .op-die { width: 22px; height: 22px; background: #bdc3c7; color: #333; border-radius: 3px; font-size: 14px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
-        
-        .status { margin: 15px; font-size: 1.2rem; color: #f39c12; }
-        #setup-screen, #game-screen { display: none; }
+        /* 通貨表示 */
+        .wallet-bar { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        .currency { padding: 8px 20px; border-radius: 50px; font-weight: bold; font-size: 1.1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 5px; }
+        .gold { background-color: #f1c40f; color: #2c3e50; border: 2px solid #f39c12; }
+        .silver { background-color: #bdc3c7; color: #2c3e50; border: 2px solid #95a5a6; }
+
+        /* ダイス */
+        .dice-area { display: flex; justify-content: center; gap: 8px; margin: 20px 0; min-height: 60px; }
+        .die { width: 50px; height: 50px; background: white; color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 3px solid #bdc3c7; cursor: pointer; transition: 0.1s; box-shadow: 0 3px 0 #95a5a6; }
+        .die.held { background: #f1c40f; border-color: #e67e22; transform: translateY(-5px); box-shadow: 0 8px 5px rgba(0,0,0,0.2); }
+        .die.locked { background: #ecf0f1; color: #95a5a6; cursor: default; }
+        .die.cpu { background: #e0e0e0; cursor: default; }
+
+        /* モーダル (ルール説明) */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
+        .modal { background: #34495e; padding: 20px; border-radius: 10px; max-width: 90%; max-height: 80%; overflow-y: auto; text-align: left; border: 2px solid #f1c40f; }
+        .modal h2 { margin-top: 0; color: #f1c40f; text-align: center; }
+        .hand-list { font-size: 0.9rem; line-height: 1.6; }
+        .hand-rank { font-weight: bold; color: #e67e22; }
+
+        /* 画面切り替え */
+        .screen { display: none; }
         .active { display: block !important; }
-        
-        .room-display { background-color: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 20px; display: inline-block; margin-bottom: 10px; border: 2px solid #f1c40f; color: #f1c40f; font-weight: bold; font-size: 1.2rem; }
-        
-        .chip-display { background-color: #f39c12; color: #2c3e50; padding: 10px 20px; border-radius: 50px; font-size: 1.5rem; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: inline-block; }
-        
-        #result-msg { font-size: 2rem; font-weight: bold; margin: 20px 0; min-height: 3rem; text-shadow: 2px 2px 0 #000; }
-        .pot-display { color: #2ecc71; font-weight: bold; font-size: 1.2rem; margin-bottom: 10px; }
-        
-        /* 名前入力ラベル */
-        .input-label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #bdc3c7; }
+
+        input { padding: 10px; font-size: 1rem; text-align: center; border-radius: 5px; border: 1px solid #ccc; width: 80%; max-width: 250px; }
+        .status { margin: 10px; font-size: 1.2rem; color: #f39c12; font-weight: bold; }
+        .info-text { font-size: 0.9rem; color: #bdc3c7; margin: 5px 0; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🎲 Online Dice Poker</h1>
+    <h1>🎲 Dice Poker Ex</h1>
 
-    <div id="setup-screen" class="active">
-        <div class="chip-display">所持金: $<span id="title-chips">---</span></div>
-        <br>
-        
-        <label class="input-label">あなたの名前</label>
-        <input type="text" id="player-name-input" placeholder="名前を入力">
-        
-        <br><br>
-        <p>部屋を作って友達を招待しよう</p>
-        <button class="btn btn-green" onclick="createRoom()">部屋を作る (HOST)</button>
-        <br><br>
-        <p>または、部屋IDを入力して参加</p>
-        <input type="text" id="room-id-input" placeholder="部屋IDを入力">
-        <button class="btn btn-blue" onclick="joinRoom()">部屋に入る (JOIN)</button>
-        <br><br>
-        <button class="btn" style="background:#95a5a6; font-size:0.8rem;" onclick="resetChips()">💸 所持金をリセット</button>
+    <div class="wallet-bar">
+        <div class="currency gold">💰 <span id="disp-gold">---</span></div>
+        <div class="currency silver">🪙 <span id="disp-silver">---</span></div>
     </div>
 
-    <div id="game-screen">
-        <div class="chip-display">所持金: $<span id="game-chips">---</span></div>
+    <div id="lobby-screen" class="screen active">
+        <button class="btn btn-small btn-gray" onclick="toggleRuleModal(true)">📖 ルールと役を見る</button>
+        <br><br>
+
+        <h3>🌍 オンライン対戦 (Gold)</h3>
+        <p class="info-text">参加費: 100 Gold</p>
+        <button class="btn btn-green" onclick="setupMultiplayer('host')">部屋を作る (HOST)</button>
         <br>
-        <div id="game-room-display" class="room-display">ID: ----</div>
-        <div id="pot-display" class="pot-display">POT: $0</div>
-        
-        <div id="result-msg"></div>
+        <div style="margin: 5px 0;">
+            <input type="text" id="room-id-input" placeholder="部屋IDを入力">
+            <button class="btn btn-blue" onclick="setupMultiplayer('join')">部屋に入る (JOIN)</button>
+        </div>
 
-        <div id="opponents-container" class="opponents-container">
+        <hr style="border-color:rgba(255,255,255,0.1); margin: 20px 0;">
+
+        <h3>🤖 CPU対戦 (Silver)</h3>
+        <p class="info-text">参加費: 50 Silver</p>
+        <select id="cpu-level" style="padding:10px; border-radius:5px; font-size:1rem; width:200px; margin-bottom:10px;">
+            <option value="1">Level 1: 初心者 (Easy)</option>
+            <option value="2" selected>Level 2: 一般人 (Normal)</option>
+            <option value="3">Level 3: 賭博師 (Hard)</option>
+        </select>
+        <br>
+        <button class="btn btn-orange" onclick="startCpuGame()">CPUと戦う</button>
+        
+        <br><br>
+        <button class="btn btn-small btn-red" onclick="resetWallet()">💸 お金をリセット</button>
+    </div>
+
+    <div id="game-screen" class="screen">
+        <div style="font-size:0.9rem; color:#bdc3c7;" id="game-info">Mode: ---</div>
+        
+        <div style="background:rgba(0,0,0,0.2); padding:10px; border-radius:10px; margin-top:10px;">
+            <div class="status">相手: <span id="op-status">待機中...</span></div>
+            <div class="dice-area" id="op-dice-area">
+                <div class="die cpu">?</div><div class="die cpu">?</div><div class="die cpu">?</div><div class="die cpu">?</div><div class="die cpu">?</div>
             </div>
+            <div id="op-hand-name" style="font-size:0.9rem;"></div>
+        </div>
 
-        <hr style="opacity:0.3; margin: 20px 0;">
-        
-        <div class="my-section">
-            <div id="my-name-display" style="font-weight:bold; font-size:1.2rem; color:#ecf0f1;">YOU</div>
-            <div class="status"><span id="my-status">準備中</span></div>
-            <div class="dice-area" id="my-dice"></div>
-            <div id="my-hand-name" style="font-size:0.9rem; color:#f1c40f; font-weight:bold;"></div>
+        <div id="result-msg" style="font-size:1.8rem; font-weight:bold; margin:15px 0; min-height:2.5rem;"></div>
+
+        <div style="background:rgba(0,0,0,0.2); padding:10px; border-radius:10px;">
+            <div class="status">あなた: <span id="my-status">準備中</span></div>
+            <div class="dice-area" id="my-dice-area"></div>
+            <div id="my-hand-name" style="font-size:1.1rem; color:#f1c40f; font-weight:bold;"></div>
             
             <button id="roll-btn" class="btn btn-green" onclick="rollAction()">ROLL (3回)</button>
         </div>
 
-        <div id="action-buttons" class="action-area">
-            <button class="btn btn-rematch" onclick="resetGame()">🔥 もう一度やる</button>
-            <button class="btn btn-lobby" onclick="exitToLobby()">🏠 ロビーに戻る</button>
+        <div id="action-area" style="margin-top:20px; display:none;">
+            <button class="btn btn-gray" onclick="backToLobby()">🏠 ロビーに戻る</button>
         </div>
+    </div>
+</div>
+
+<div id="rule-modal" class="modal-overlay" onclick="toggleRuleModal(false)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <h2>📖 ルール & 役一覧</h2>
+        <p>5つのサイコロを最大3回振って、より強い役を作った方の勝ちです。<br>
+        1投目・2投目の後に、残したいサイコロをクリックして「HOLD（固定）」できます。</p>
         
-        <p id="msg">クリックしてHOLD / ROLLで確定</p>
+        <h3>🏆 役の強さ (上ほど強い)</h3>
+        <div class="hand-list">
+            <span class="hand-rank">1. Five of a Kind (5カード)</span><br>同じ数字が5つ (例: 77777)<br><br>
+            <span class="hand-rank">2. Four of a Kind (4カード)</span><br>同じ数字が4つ (例: 55551)<br><br>
+            <span class="hand-rank">3. Full House (フルハウス)</span><br>3カード + 1ペア (例: 33366)<br><br>
+            <span class="hand-rank">4. Straight (ストレート)</span><br>12345 または 23456 の並び<br><br>
+            <span class="hand-rank">5. Three of a Kind (3カード)</span><br>同じ数字が3つ (例: 22214)<br><br>
+            <span class="hand-rank">6. Two Pair (2ペア)</span><br>ペアが2組 (例: 11445)<br><br>
+            <span class="hand-rank">7. One Pair (1ペア)</span><br>ペアが1組 (例: 66123)<br><br>
+            <span class="hand-rank">8. High Card (ブタ)</span><br>役なし。数字の合計などは関係なし。
+        </div>
+        <br>
+        <button class="btn btn-green" onclick="toggleRuleModal(false)">閉じる</button>
     </div>
 </div>
 
@@ -116,156 +150,161 @@
       appId: "1:730416248000:web:349072ce1b17bcc139e925",
       measurementId: "G-KP58T1CMFN"
     };
-
     // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // --- ゲーム状態変数 ---
+    let myGold = 1000;
+    let mySilver = 500;
+    const BET_GOLD = 100;
+    const BET_SILVER = 50;
+
+    let gameMode = null; // 'multi' or 'cpu'
+    let cpuLevel = 2;
     let roomId = null;
-    let myId = null;
-    let myName = "Player";
+    let myRole = null; // 'host' or 'guest' (multi only)
+    
     let myDice = [1,1,1,1,1];
+    let opDice = [1,1,1,1,1];
     let heldDice = [false,false,false,false,false];
     let rollCount = 3;
     let isGameFinished = false;
     let lastResetTime = 0;
-    
-    let myChips = 1000;
-    const BET_AMOUNT = 100;
 
     // DOM要素
-    const setupScreen = document.getElementById('setup-screen');
+    const lobbyScreen = document.getElementById('lobby-screen');
     const gameScreen = document.getElementById('game-screen');
-    const myDiceDiv = document.getElementById('my-dice');
-    const opponentsDiv = document.getElementById('opponents-container');
-    const roomDisplay = document.getElementById('game-room-display');
+    const myDiceDiv = document.getElementById('my-dice-area');
+    const opDiceDiv = document.getElementById('op-dice-area');
+    const rollBtn = document.getElementById('roll-btn');
     const resultMsg = document.getElementById('result-msg');
-    const actionButtons = document.getElementById('action-buttons');
-    const titleChips = document.getElementById('title-chips');
-    const gameChips = document.getElementById('game-chips');
-    const potDisplay = document.getElementById('pot-display');
-    const nameInput = document.getElementById('player-name-input');
-    const myNameDisplay = document.getElementById('my-name-display');
+    const actionArea = document.getElementById('action-area');
+    const opStatus = document.getElementById('op-status');
+    const myStatus = document.getElementById('my-status');
 
     // 初期化
-    loadSettings();
-    myId = 'player_' + Math.floor(Math.random() * 1000000);
+    loadWallet();
 
-    function loadSettings() {
-        // チップ読み込み
-        const savedChips = localStorage.getItem('dicePokerChips');
-        myChips = savedChips ? parseInt(savedChips) : 1000;
-        updateChipDisplay();
-        
-        // 名前読み込み
-        const savedName = localStorage.getItem('dicePokerName');
-        if(savedName) {
-            nameInput.value = savedName;
-            myName = savedName;
-        }
+    function loadWallet() {
+        myGold = parseInt(localStorage.getItem('dp_gold') || 1000);
+        mySilver = parseInt(localStorage.getItem('dp_silver') || 500);
+        updateWalletUI();
+    }
+    function saveWallet() {
+        localStorage.setItem('dp_gold', myGold);
+        localStorage.setItem('dp_silver', mySilver);
+        updateWalletUI();
+    }
+    function updateWalletUI() {
+        document.getElementById('disp-gold').innerText = myGold;
+        document.getElementById('disp-silver').innerText = mySilver;
+    }
+    function resetWallet() {
+        if(!confirm("お金を初期状態に戻しますか？")) return;
+        myGold = 1000;
+        mySilver = 500;
+        saveWallet();
     }
 
-    function saveSettings() {
-        localStorage.setItem('dicePokerChips', myChips);
-        myName = nameInput.value || "No Name";
-        localStorage.setItem('dicePokerName', myName);
-        updateChipDisplay();
+    function toggleRuleModal(show) {
+        document.getElementById('rule-modal').style.display = show ? 'flex' : 'none';
     }
+
+    // --- ゲーム開始フロー ---
     
-    function resetChips() {
-        if(confirm("本当に所持金を$1000にリセットしますか？")) {
-            myChips = 1000;
-            saveSettings();
+    function backToLobby() {
+        // マルチプレイなら切断処理
+        if(gameMode === 'multi' && roomId) {
+            db.ref(`rooms/${roomId}/${myRole}`).remove();
+        }
+        window.location.reload();
+    }
+
+    // 1. CPU戦開始
+    function startCpuGame() {
+        if(mySilver < BET_SILVER) return alert("Silverコインが足りません！");
+        gameMode = 'cpu';
+        cpuLevel = parseInt(document.getElementById('cpu-level').value);
+        
+        mySilver -= BET_SILVER; // 参加費徴収
+        saveWallet();
+
+        document.getElementById('game-info').innerText = "Mode: CPU Battle (Level " + cpuLevel + ")";
+        startGameCommon();
+        
+        // CPU初期化
+        opStatus.innerText = "思考中...";
+        updateOpDiceVisuals([0,0,0,0,0], false); // 隠す
+        
+        // プレイヤーの操作待ちへ
+    }
+
+    // 2. マルチプレイ開始
+    function setupMultiplayer(type) {
+        if(myGold < BET_GOLD) return alert("Goldチップが足りません！");
+        gameMode = 'multi';
+        
+        if(type === 'host') {
+            roomId = Math.floor(1000 + Math.random()*9000).toString();
+            myRole = 'host';
+            initMultiDB();
+        } else {
+            roomId = document.getElementById('room-id-input').value;
+            if(!roomId) return alert("IDを入力してください");
+            myRole = 'guest';
+            initMultiDB();
         }
     }
 
-    function updateChipDisplay() {
-        titleChips.innerText = myChips;
-        gameChips.innerText = myChips;
+    function initMultiDB() {
+        let updates = {};
+        if(myRole === 'host') {
+            updates = {
+                resetSignal: Date.now(),
+                host: { dice: [0,0,0,0,0], status: 'Thinking' },
+                guest: { dice: [0,0,0,0,0], status: 'Waiting' }
+            };
+            db.ref('rooms/' + roomId).set(updates).then(onMultiReady);
+        } else {
+            // ゲスト参加時は自分の枠だけ確保
+            db.ref(`rooms/${roomId}/guest`).set({ dice: [0,0,0,0,0], status: 'Thinking' }).then(onMultiReady);
+        }
     }
 
-    function createRoom() {
-        if(myChips < BET_AMOUNT) return alert("チップが足りません！");
-        saveSettings(); // 名前保存
-        roomId = Math.floor(1000 + Math.random() * 9000).toString();
-        
-        let initialData = {
-            resetSignal: Date.now(),
-            players: {}
-        };
-        db.ref('rooms/' + roomId).set(initialData).then(() => {
-            joinGameProcess();
-        });
+    function onMultiReady() {
+        myGold -= BET_GOLD; // 参加費
+        saveWallet();
+        document.getElementById('game-info').innerText = "Mode: Online (Room " + roomId + ")";
+        startGameCommon();
+        listenToRoom();
     }
 
-    function joinRoom() {
-        if(myChips < BET_AMOUNT) return alert("チップが足りません！");
-        roomId = document.getElementById('room-id-input').value;
-        if (!roomId) return alert("部屋IDを入れてね");
-        saveSettings(); // 名前保存
-        joinGameProcess();
-    }
-
-    function joinGameProcess() {
-        const playerRef = db.ref(`rooms/${roomId}/players/${myId}`);
-        
-        // 1. DBに自分を登録
-        playerRef.set({
-            dice: [0,0,0,0,0],
-            status: 'Thinking',
-            chips: myChips,
-            name: myName
-        });
-
-        // 2. 【重要】切断時に自動でデータを消す設定
-        playerRef.onDisconnect().remove();
-        
-        roomDisplay.innerText = "ID: " + roomId;
-        myNameDisplay.innerText = myName + " (あなた)";
-        
-        setupScreen.classList.remove('active');
+    // --- ゲーム共通処理 ---
+    function startGameCommon() {
+        lobbyScreen.classList.remove('active');
         gameScreen.classList.add('active');
         
-        listenToRoom();
-        startGameUI();
-    }
-
-    function resetGame() {
-        if(myChips < BET_AMOUNT) {
-            alert("破産しました...");
-            exitToLobby();
-            return;
-        }
-        db.ref('rooms/' + roomId).update({
-            resetSignal: Date.now()
-        });
-    }
-
-    function exitToLobby() {
-        // 退出時は自分のデータを消してからリロード
-        db.ref(`rooms/${roomId}/players/${myId}`).remove().then(() => {
-            window.location.reload();
-        });
-    }
-
-    function startGameUI() {
         rollCount = 3;
         heldDice = [false,false,false,false,false];
         isGameFinished = false;
         resultMsg.innerText = "";
-        actionButtons.style.display = "none";
+        actionArea.style.display = 'none';
         
-        document.getElementById('roll-btn').disabled = false;
-        document.getElementById('roll-btn').style.backgroundColor = "#27ae60";
-        document.getElementById('roll-btn').innerText = "ROLL (3回)";
+        // UIリセット
+        rollBtn.disabled = false;
+        rollBtn.innerText = "ROLL (3回)";
+        rollBtn.className = "btn btn-green";
+        myStatus.innerText = "準備中";
+        
+        document.getElementById('op-hand-name').innerText = "";
         document.getElementById('my-hand-name').innerText = "";
         
-        initMyDice();
-        updateMyStatus("考え中...");
+        initMyDiceUI();
     }
 
-    function initMyDice() {
+    function initMyDiceUI() {
         myDiceDiv.innerHTML = '';
         for(let i=0; i<5; i++){
             let d = document.createElement('div');
@@ -282,168 +321,217 @@
         if(heldDice[i]) el.classList.add('held'); else el.classList.remove('held');
     }
 
+    // プレイヤーのロールアクション
     function rollAction() {
         if(rollCount <= 0) return;
+        
+        // ダイスを振る
         for(let i=0; i<5; i++){
             if(!heldDice[i]) myDice[i] = Math.floor(Math.random()*6)+1;
         }
         rollCount--;
         
+        // 画面更新
         let dies = myDiceDiv.children;
         for(let i=0; i<5; i++) dies[i].innerText = myDice[i];
-        if(rollCount < 3) document.getElementById('my-hand-name').innerText = getHandName(myDice).name;
+        
+        if(rollCount < 3) {
+            document.getElementById('my-hand-name').innerText = getHand(myDice).name;
+        }
 
         let statusText = (rollCount === 0) ? "確定！" : "考え中...";
-        updateMyStatus(statusText);
+        myStatus.innerText = statusText;
 
-        document.getElementById('roll-btn').innerText = (rollCount > 0) ? `REROLL (あと${rollCount}回)` : "勝負待ち...";
+        // ボタン更新
+        rollBtn.innerText = (rollCount > 0) ? `REROLL (あと${rollCount}回)` : "勝負待ち...";
         if(rollCount === 0) {
-            document.getElementById('roll-btn').disabled = true;
-            document.getElementById('roll-btn').style.backgroundColor = "#7f8c8d";
+            rollBtn.disabled = true;
+            rollBtn.className = "btn btn-gray";
         }
-    }
 
-    function updateMyStatus(status) {
-        db.ref(`rooms/${roomId}/players/${myId}`).update({
-            dice: myDice,
-            status: status,
-            chips: myChips,
-            name: myName
-        });
-    }
-
-    function listenToRoom() {
-        db.ref('rooms/' + roomId).on('value', (snapshot) => {
-            const data = snapshot.val();
-            // 部屋データが消えている場合の対策
-            if (!data) return;
-
-            // リセット監視
-            if (data.resetSignal && data.resetSignal > lastResetTime) {
-                lastResetTime = data.resetSignal;
-                startGameUI();
-                return;
-            }
-
-            const players = data.players || {};
-            const playerKeys = Object.keys(players);
-            
-            // プレイヤーが自分しかいない場合
-            if (playerKeys.length <= 1) {
-                opponentsDiv.innerHTML = '<div style="color:#bdc3c7;">対戦相手を待っています...</div>';
-                potDisplay.innerText = "POT: ---";
-                return; // 一人なら勝敗判定もしない
-            }
-
-            potDisplay.innerText = `POT: $${playerKeys.length * BET_AMOUNT}`;
-
-            // 相手エリア描画
-            opponentsDiv.innerHTML = '';
-            let allFinished = true;
-
-            playerKeys.forEach(key => {
-                if (key === myId) return; // 自分はスキップ
-                
-                let p = players[key];
-                if (!p) return; // データ破損対策
-
-                if (p.status !== "確定！") allFinished = false;
-
-                let card = document.createElement('div');
-                card.className = 'opponent-card';
-                
-                // 名前表示
-                let nameHtml = `<div class="op-name">${p.name || 'Unknown'}</div>`;
-                let chipText = `<div style="font-size:0.8rem;">$${p.chips}</div>`;
-                let statusText = `<div style="color:${p.status==='確定！'?'#2ecc71':'#f1c40f'}">${p.status}</div>`;
-                
-                let diceHtml = '<div class="op-dice-area">';
-                if (p.dice) {
-                    p.dice.forEach(val => {
-                        let show = isGameFinished; 
-                        diceHtml += `<div class="op-die" style="background:${show ? '#bdc3c7':'#7f8c8d'}">${show ? val : '?'}</div>`;
-                    });
-                }
-                diceHtml += '</div>';
-                
-                let handName = isGameFinished ? `<div style="font-size:0.7rem; color:#bdc3c7; margin-top:5px;">${getHandName(p.dice).name}</div>` : '';
-
-                card.innerHTML = nameHtml + chipText + statusText + diceHtml + handName;
-                opponentsDiv.appendChild(card);
+        // --- モード別処理 ---
+        if(gameMode === 'multi') {
+            // Firebase送信
+            db.ref(`rooms/${roomId}/${myRole}`).update({
+                dice: myDice,
+                status: statusText
             });
-
-            // 自分の状態チェック
-            let myData = players[myId];
-            if (!myData || myData.status !== "確定！") allFinished = false;
-
-            // 勝敗判定
-            if (allFinished && !isGameFinished) {
-                isGameFinished = true;
-                determineWinner(players);
-            }
-        });
-    }
-
-    function determineWinner(players) {
-        let results = [];
-        Object.keys(players).forEach(key => {
-            let p = players[key];
-            if(!p) return;
-            let hand = getHandName(p.dice);
-            results.push({ id: key, name: p.name, rank: hand.rank, subRank: hand.subRank });
-        });
-
-        // ランク順にソート
-        results.sort((a, b) => b.rank - a.rank);
-
-        let winner = results[0];
-        let isMeWinner = (winner.id === myId);
-        let isDraw = (results.length > 1 && results[1].rank === winner.rank);
-        let pot = results.length * BET_AMOUNT;
-
-        if (isDraw) {
-            resultMsg.innerText = "DRAW (引き分け) ±0";
-            resultMsg.style.color = "#fff";
-        } else if (isMeWinner) {
-            let profit = (results.length - 1) * BET_AMOUNT;
-            resultMsg.innerText = `WIN!! (+$${profit}) 🏆`;
-            resultMsg.style.color = "#f1c40f";
-            myChips += profit;
         } else {
-            resultMsg.innerText = `LOSE... (-$${BET_AMOUNT}) 😢`;
-            resultMsg.style.color = "#e74c3c";
-            // 勝者の名前を表示
-            let winnerName = isDraw ? "引き分け" : winner.name;
-            resultMsg.innerHTML += `<div style="font-size:1rem; color:#bdc3c7; margin-top:5px;">Winner: ${winnerName}</div>`;
-            myChips -= BET_AMOUNT;
+            // CPU戦進行
+            runCpuProcess();
         }
-
-        saveSettings(); // チップ保存
-        db.ref(`rooms/${roomId}/players/${myId}/chips`).set(myChips);
-        
-        // 確定状態を再送信（相手に手札を見せるため）
-        updateMyStatus("確定！");
-        actionButtons.style.display = "flex";
     }
 
-    function getHandName(dice) {
-        if(!dice) return {rank:0, name:""};
+    // --- CPUロジック ---
+    function runCpuProcess() {
+        if(isGameFinished) return;
+
+        // プレイヤーが確定したらCPUも結果を出す（簡易化のため、プレイヤーが終わるまで待つ仕様にします）
+        // もしリアルタイム感を出したいなら、プレイヤーのrollCountに合わせてCPUも内部でrollCount減らす演出が必要ですが、
+        // 今回は「プレイヤーが確定」→「CPUが一瞬で3回振って結果発表」の流れにします。
+        
+        if(rollCount === 0) {
+            opStatus.innerText = "演算中...";
+            setTimeout(() => {
+                // CPUが3回振るシミュレーション
+                let cpuD = [0,0,0,0,0];
+                let cpuHeld = [false,false,false,false,false];
+                
+                for(let turn=0; turn<3; turn++) {
+                    // Roll
+                    for(let i=0; i<5; i++) {
+                        if(!cpuHeld[i]) cpuD[i] = Math.floor(Math.random()*6)+1;
+                    }
+                    
+                    if(turn < 2) { // 最後のターン以外はHold判断
+                        cpuHeld = decideCpuHold(cpuD, cpuLevel);
+                    }
+                }
+                
+                // 結果表示
+                opDice = cpuD;
+                updateOpDiceVisuals(opDice, true);
+                opStatus.innerText = "確定！";
+                
+                finishGame(myDice, opDice);
+            }, 1000);
+        } else {
+            opStatus.innerText = "相手も考え中...";
+        }
+    }
+
+    function decideCpuHold(dice, level) {
+        let held = [false,false,false,false,false];
         let counts = {};
         dice.forEach(x => { counts[x] = (counts[x] || 0) + 1; });
+        
+        if(level === 1) { // Easy: ランダムか、6だけ残す
+            dice.forEach((val, i) => { if(val === 6 || Math.random() > 0.7) held[i] = true; });
+        }
+        else if (level === 2) { // Normal: ペア以上は残す
+            dice.forEach((val, i) => { if(counts[val] >= 2) held[i] = true; });
+        }
+        else { // Hard: 役作り優先
+            // ストレート狙い判定は複雑なので、基本は「重複が多い数字」or「重複がないなら高い数字」を残す
+            let maxCount = Math.max(...Object.values(counts));
+            if(maxCount >= 2) {
+                // ペア以上があればそれを固める
+                dice.forEach((val, i) => { if(counts[val] >= 2) held[i] = true; });
+            } else {
+                // バラバラならストレート狙いかHighCard狙い（4以上を残す）
+                dice.forEach((val, i) => { if(val >= 4) held[i] = true; });
+            }
+        }
+        return held;
+    }
+
+    // --- マルチプレイ監視 ---
+    function listenToRoom() {
+        db.ref('rooms/' + roomId).on('value', snap => {
+            const data = snap.val();
+            if(!data || isGameFinished) return;
+
+            let opRole = (myRole === 'host') ? 'guest' : 'host';
+            let opData = data[opRole];
+
+            if(opData) {
+                opStatus.innerText = opData.status;
+                
+                // 相手が確定するまでダイスは隠す
+                if(opData.status === "確定！") {
+                    opDice = opData.dice;
+                }
+                
+                // 自分の状態も確認
+                if(rollCount === 0 && opData.status === "確定！" && !isGameFinished) {
+                    updateOpDiceVisuals(opDice, true);
+                    finishGame(myDice, opDice);
+                } else {
+                    // まだ途中なら隠して表示
+                    updateOpDiceVisuals(opData.dice || [0,0,0,0,0], false);
+                }
+            }
+        });
+    }
+
+    function updateOpDiceVisuals(dice, visible) {
+        opDiceDiv.innerHTML = '';
+        dice.forEach(val => {
+            let d = document.createElement('div');
+            d.className = 'die cpu';
+            d.innerText = visible ? val : "?";
+            if(visible) d.style.background = "white";
+            opDiceDiv.appendChild(d);
+        });
+    }
+
+    // --- 勝敗判定 ---
+    function finishGame(myD, opD) {
+        isGameFinished = true;
+        let myHand = getHand(myD);
+        let opHand = getHand(opD);
+
+        document.getElementById('my-hand-name').innerText = myHand.name;
+        document.getElementById('op-hand-name').innerText = opHand.name;
+
+        let winAmount = 0;
+        let isWin = false;
+        
+        if(myHand.rank > opHand.rank || (myHand.rank === opHand.rank && myHand.sum > opHand.sum)) { // 簡易的に同ランクなら合計値勝負
+            isWin = true;
+            resultMsg.innerText = "🏆 YOU WIN!!";
+            resultMsg.style.color = "#f1c40f";
+        } else if (myHand.rank < opHand.rank || (myHand.rank === opHand.rank && myHand.sum < opHand.sum)) {
+            resultMsg.innerText = "💀 YOU LOSE...";
+            resultMsg.style.color = "#e74c3c";
+        } else {
+            resultMsg.innerText = "🤝 DRAW";
+            resultMsg.style.color = "white";
+        }
+
+        // 報酬計算
+        if(gameMode === 'cpu') {
+            if(isWin) {
+                // CPU戦はオッズ2倍(参加費50戻り+50勝ち=100) + レベルボーナス
+                let bonus = (cpuLevel - 1) * 20; 
+                let reward = (BET_SILVER * 2) + bonus;
+                mySilver += reward;
+                resultMsg.innerText += ` (+${reward - BET_SILVER} Silver)`;
+            } else if (resultMsg.innerText.includes("DRAW")) {
+                mySilver += BET_SILVER; // 引き分けは返金
+            }
+        } else {
+            if(isWin) {
+                // マルチは総取り (参加費100 * 2 = 200)
+                myGold += (BET_GOLD * 2);
+                resultMsg.innerText += ` (+${BET_GOLD} Gold)`;
+            } else if (resultMsg.innerText.includes("DRAW")) {
+                myGold += BET_GOLD;
+            }
+        }
+        
+        saveWallet();
+        actionArea.style.display = 'block';
+    }
+
+    function getHand(dice) {
+        if(!dice || dice.includes(0)) return {rank:0, name:"---", sum:0};
+        let counts = {};
+        let sum = 0;
+        dice.forEach(x => { counts[x] = (counts[x] || 0) + 1; sum += x; });
         let values = Object.values(counts).sort((a,b) => b - a);
         let uniqueDice = [...new Set(dice)].sort().join('');
         let isStraight = (uniqueDice === '12345' || uniqueDice === '23456');
 
-        if (values[0] === 5) return { rank: 8, name: "5カード" };
-        if (values[0] === 4) return { rank: 7, name: "4カード" };
-        if (values[0] === 3 && values[1] === 2) return { rank: 6, name: "フルハウス" };
-        if (isStraight) return { rank: 5, name: "ストレート" };
-        if (values[0] === 3) return { rank: 4, name: "3カード" };
-        if (values[0] === 2 && values[1] === 2) return { rank: 3, name: "2ペア" };
-        if (values[0] === 2) return { rank: 2, name: "1ペア" };
-        return { rank: 1, name: "ブタ" };
+        if (values[0] === 5) return { rank: 8, name: "Five of a Kind", sum };
+        if (values[0] === 4) return { rank: 7, name: "Four of a Kind", sum };
+        if (values[0] === 3 && values[1] === 2) return { rank: 6, name: "Full House", sum };
+        if (isStraight) return { rank: 5, name: "Straight", sum };
+        if (values[0] === 3) return { rank: 4, name: "Three of a Kind", sum };
+        if (values[0] === 2 && values[1] === 2) return { rank: 3, name: "Two Pair", sum };
+        if (values[0] === 2) return { rank: 2, name: "One Pair", sum };
+        return { rank: 1, name: "High Card", sum };
     }
 </script>
 </body>
 </html>
-
