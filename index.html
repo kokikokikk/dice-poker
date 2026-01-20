@@ -91,7 +91,15 @@
         <button class="btn btn-orange" onclick="startCpuGame()">CPUと戦う</button>
         
         <br><br>
-        <button class="btn btn-small btn-red" onclick="resetWallet()">💸 お金をリセット</button>
+        <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
+            <button class="btn btn-small btn-gray" onclick="resetSilver()" style="border:2px solid #bdc3c7;">
+                🪙 Silverを補充
+            </button>
+            
+            <button class="btn btn-small btn-green" onclick="resetGold()" style="border:2px solid #f1c40f;">
+                💰 Goldを補充
+            </button>
+        </div>
     </div>
 
     <div id="game-screen" class="screen">
@@ -216,11 +224,20 @@
         document.getElementById('disp-gold').innerText = myGold;
         document.getElementById('disp-silver').innerText = mySilver;
     }
-    function resetWallet() {
-        if(!confirm("お金を初期状態に戻しますか？")) return;
-        myGold = 1000;
+    // CPU用コインだけリセット
+    function resetSilver() {
+        if(!confirm("CPU対戦用のコイン(Silver)を\n初期値(500)に戻しますか？")) return;
         mySilver = 500;
         saveWallet();
+        updateWalletUI();
+    }
+
+    // 対人用チップだけリセット
+    function resetGold() {
+        if(!confirm("対人戦用のチップ(Gold)を\n初期値(1000)に戻しますか？")) return;
+        myGold = 1000;
+        saveWallet();
+        updateWalletUI();
     }
 
     function toggleRuleModal(show) {
@@ -527,3 +544,4 @@
 </script>
 </body>
 </html>
+
