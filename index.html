@@ -71,7 +71,7 @@
 
 <script>
     // ▼▼▼▼▼ ここだけ自分の設定に書き換えてください ▼▼▼▼▼
-    const firebaseConfig = {
+   const firebaseConfig = {
       apiKey: "AIzaSyD0micFDoWAHMpZdY2IPhjW3v2XLqloJX8",
       authDomain: "dice-poker-e9021.firebaseapp.com",
       databaseURL: "https://dice-poker-e9021-default-rtdb.firebaseio.com",
@@ -93,7 +93,7 @@
     let heldDice = [false,false,false,false,false];
     let rollCount = 3;
     let isGameFinished = false;
-    let lastResetTime = 0; // 重複リセットを防ぐためのタイムスタンプ
+    let lastResetTime = 0; 
 
     const setupScreen = document.getElementById('setup-screen');
     const gameScreen = document.getElementById('game-screen');
@@ -115,23 +115,21 @@
         myRole = 'guest';
         roomDisplay.innerText = "部屋ID: " + roomId;
         listenToRoom();
+        // ゲストはDBをリセットせず、今の状態を聞くだけ
         startGameUI();
     }
 
     // データベースを初期状態にする
     function resetDB() {
-        // 現在時刻をリセット信号として送る
         let now = Date.now();
         db.ref('rooms/' + roomId).set({
             host: { dice: [0,0,0,0,0], status: 'Thinking' },
             guest: { dice: [0,0,0,0,0], status: 'Waiting' },
             resetSignal: now 
         }).then(() => {
+            // ホスト側はここでUIリセットを呼ばない！(listenToRoomに任せる)
             roomDisplay.innerText = "部屋ID: " + roomId;
-            // ホスト側も自分の lastResetTime を更新しておく
-            lastResetTime = now;
             listenToRoom();
-            startGameUI();
         });
     }
     
@@ -208,9 +206,9 @@
             const data = snapshot.val();
             if (!data) return;
 
-            // 【重要】新しいリセット信号が来た時だけリセットを実行する
+            // リセット監視
             if (data.resetSignal && data.resetSignal > lastResetTime) {
-                lastResetTime = data.resetSignal; // 時刻を更新
+                lastResetTime = data.resetSignal;
                 startGameUI();
                 return; 
             }
@@ -223,13 +221,14 @@
                 document.getElementById('opponent-status').innerText = opData.status;
                 opDiceDiv.innerHTML = '';
                 
-                // 相手のサイコロ表示
+                // 【修正点】勝敗が決まった(isGameFinishedがtrue)ときだけ相手の手札を見せる
                 if (opData.dice) {
                     opData.dice.forEach(val => {
                         let d = document.createElement('div');
                         d.className = 'die';
-                        // 相手が確定、または既に勝負がついている場合はオープン
-                        if (opData.status === "確定！" || isGameFinished) {
+                        
+                        // ここで表示条件を制御
+                        if (isGameFinished) {
                             d.innerText = val;
                             d.style.backgroundColor = "#bdc3c7";
                         } else {
@@ -239,16 +238,29 @@
                     });
                 }
 
-                // 勝敗判定：両方「確定」で、まだ勝負がついていない時だけ実行
+                // 勝敗判定：両方「確定！」になったら実行
                 if (opData.status === "確定！" && myData.status === "確定！" && !isGameFinished) {
                     isGameFinished = true;
+                    // フラグを立ててから描画し直すことで、↑の条件で手札が見えるようになる
+                    listenToRoom(); // 再描画のために自分を呼ぶのではなく、このまま判定へ
+                    
+                    // 相手の手札を強制的にオープン描画
+                    opDiceDiv.innerHTML = '';
+                    opData.dice.forEach(val => {
+                        let d = document.createElement('div');
+                        d.className = 'die';
+                        d.innerText = val;
+                        d.style.backgroundColor = "#bdc3c7";
+                        opDiceDiv.appendChild(d);
+                    });
+                    
                     judgeWinner(myData.dice, opData.dice);
                 }
             }
         });
     }
 
-    // 勝敗判定ロジック
+    // 勝敗判定
     function judgeWinner(myD, opD) {
         let myHand = getHandName(myD);
         let opHand = getHandName(opD);
@@ -267,11 +279,9 @@
             resultMsg.style.color = "#fff";
         }
         
-        // 次へボタンを表示
         nextBtn.style.display = "block";
     }
 
-    // 役判定 (点数計算)
     function getHandName(dice) {
         if(!dice) return {rank:0, name:""};
         let counts = {};
@@ -292,4 +302,3 @@
 </script>
 </body>
 </html>
-
