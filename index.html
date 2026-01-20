@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Dice Poker Ex (Party)</title>
+    <title>Dice Poker Ex (Sync)</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
@@ -30,24 +30,20 @@
         .gold { background-color: #f1c40f; color: #2c3e50; border: 2px solid #f39c12; }
         .silver { background-color: #bdc3c7; color: #2c3e50; border: 2px solid #95a5a6; }
 
-        /* ダイス */
         .dice-area { display: flex; justify-content: center; gap: 5px; margin: 10px 0; min-height: 50px; }
         .die { width: 45px; height: 45px; background: white; color: #333; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; border: 2px solid #bdc3c7; cursor: pointer; transition: 0.1s; box-shadow: 0 3px 0 #95a5a6; touch-action: manipulation; }
         .die.held { background: #f1c40f; border-color: #e67e22; transform: translateY(-3px); box-shadow: 0 6px 3px rgba(0,0,0,0.2); }
         .die.locked { background: #ecf0f1; color: #95a5a6; cursor: default; }
         .die.cpu { background: #e0e0e0; cursor: default; width: 30px; height: 30px; font-size: 16px; border-width: 1px; }
 
-        /* 相手エリア (複数表示用) */
-        .opponents-grid {
-            display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 15px;
-        }
-        .opponent-card {
-            background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 8px;
-            display: flex; flex-direction: column; align-items: center; min-width: 120px;
-        }
+        .opponents-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 15px; }
+        .opponent-card { background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; min-width: 120px; position: relative; }
         .op-name { font-size: 0.8rem; color: #f1c40f; font-weight: bold; margin-bottom: 3px; }
         .op-status { font-size: 0.7rem; color: #bdc3c7; margin-bottom: 3px; }
         .op-dice-row { display: flex; gap: 2px; }
+        
+        /* 準備中オーバーレイ */
+        .waiting-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.7rem; font-weight:bold; }
 
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
         .modal { background: #34495e; padding: 20px; border-radius: 10px; max-width: 90%; max-height: 80%; overflow-y: auto; text-align: left; border: 2px solid #f1c40f; }
@@ -62,12 +58,19 @@
         .status { margin: 10px; font-size: 1.2rem; color: #f39c12; font-weight: bold; }
         .info-text { font-size: 0.9rem; color: #bdc3c7; margin: 5px 0; }
         .action-row { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+        
+        /* 全員待機中のメッセージ */
+        #sync-message {
+            position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85); padding: 20px; border-radius: 10px; border: 2px solid #e67e22;
+            z-index: 50; display: none; width: 80%; max-width: 400px;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🎲 Dice Poker (Party)</h1>
+    <h1>🎲 Dice Poker Ex</h1>
 
     <div class="wallet-bar">
         <div class="currency gold">💰 <span id="disp-gold">---</span></div>
@@ -83,7 +86,7 @@
         <br><br>
 
         <h3>🌍 オンライン対戦 (Gold)</h3>
-        <p class="info-text">参加費: 100 Gold / 3人以上もOK</p>
+        <p class="info-text">参加費: 100 Gold</p>
         <div style="margin: 5px 0;">
             <input type="text" id="room-id-input" placeholder="部屋ID (例: 1234)">
         </div>
@@ -135,6 +138,13 @@
             </div>
         </div>
     </div>
+
+    <div id="sync-message">
+        <h3>⏳ 待機中...</h3>
+        <p>他のプレイヤーが「もう一回」を押すのを待っています。</p>
+        <div style="font-size:2rem;">🎲</div>
+    </div>
+
 </div>
 
 <div id="rule-modal" class="modal-overlay" onclick="toggleRuleModal(false)">
@@ -178,12 +188,13 @@
     let myName = "Player";
     let myGold = 1000;
     let mySilver = 500;
-    let myId = null; // Unique ID for session
+    let myId = null; 
     
     let gameMode = null; 
     let cpuLevel = 2;
     let currentCpuBet = 50;
     let roomId = null;
+    let myRound = 1; // 現在のラウンド数（同期用）
     
     let myDice = [1,1,1,1,1];
     let heldDice = [false,false,false,false,false];
@@ -201,11 +212,11 @@
     const myStatus = document.getElementById('my-status');
     const nameInput = document.getElementById('player-name-input');
     const cpuCostDisplay = document.getElementById('cpu-cost-display');
+    const syncMsg = document.getElementById('sync-message');
 
     // Init
     loadWallet();
     updateCpuCost();
-    // Generate simple Session ID
     myId = 'p_' + Math.random().toString(36).substr(2, 9);
 
     function loadWallet() {
@@ -242,7 +253,6 @@
         cpuCostDisplay.innerText = CPU_BETS[lv];
     }
 
-    // --- Lobby Actions ---
     function backToLobby() {
         if(gameMode === 'multi' && roomId) {
             db.ref(`rooms/${roomId}/players/${myId}`).remove();
@@ -262,9 +272,7 @@
         gameMode = 'cpu';
         
         setupGameScreen(`Mode: CPU Battle (Lv.${cpuLevel})`);
-        
-        // Setup visual opponent (CPU)
-        renderOpponentCard('cpu', "CPU (Lv."+cpuLevel+")", "Thinking...", [0,0,0,0,0], false);
+        renderOpponentCard('cpu', "CPU (Lv."+cpuLevel+")", "Thinking...", [0,0,0,0,0], false, true);
         
         document.getElementById('cpu-actions').style.display = 'flex';
         document.getElementById('multi-actions').style.display = 'none';
@@ -277,7 +285,7 @@
         saveWallet();
         
         resetGameState();
-        renderOpponentCard('cpu', "CPU (Lv."+cpuLevel+")", "Thinking...", [0,0,0,0,0], false);
+        renderOpponentCard('cpu', "CPU (Lv."+cpuLevel+")", "Thinking...", [0,0,0,0,0], false, true);
     }
 
     // --- 2. Multiplayer Mode ---
@@ -291,23 +299,35 @@
         myGold -= BET_GOLD;
         saveWallet();
 
-        // 自分のデータを登録
-        db.ref(`rooms/${roomId}/players/${myId}`).set({
-            name: myName,
-            dice: [0,0,0,0,0],
-            status: 'Thinking',
-            rollCount: 3,
-            finished: false
+        // 部屋の現状を確認して、適切なラウンド数で参加する
+        db.ref(`rooms/${roomId}/players`).once('value', snap => {
+            const players = snap.val();
+            let joinRound = 1;
+            if (players) {
+                // 誰かがいれば、その中で一番進んでいるラウンドに合わせる（または+1）
+                let maxR = 1;
+                Object.values(players).forEach(p => { if(p.round > maxR) maxR = p.round; });
+                joinRound = maxR; // 途中参加は現在のラウンドに合わせる
+            }
+            myRound = joinRound;
+            
+            // データ登録
+            db.ref(`rooms/${roomId}/players/${myId}`).set({
+                name: myName,
+                dice: [0,0,0,0,0],
+                status: 'Thinking',
+                rollCount: 3,
+                finished: false,
+                round: myRound // ここで同期用ラウンド数を設定
+            });
+            db.ref(`rooms/${roomId}/players/${myId}`).onDisconnect().remove();
+
+            setupGameScreen(`Mode: Online (Room ${roomId})`);
+            document.getElementById('cpu-actions').style.display = 'none';
+            document.getElementById('multi-actions').style.display = 'flex';
+            
+            listenToRoom();
         });
-
-        // 過去の残留データを消す(切断時用)
-        db.ref(`rooms/${roomId}/players/${myId}`).onDisconnect().remove();
-
-        setupGameScreen(`Mode: Online (Room ${roomId})`);
-        document.getElementById('cpu-actions').style.display = 'none';
-        document.getElementById('multi-actions').style.display = 'flex';
-
-        listenToRoom();
     }
 
     function restartMultiGame() {
@@ -315,43 +335,81 @@
         myGold -= BET_GOLD;
         saveWallet();
 
+        // ★重要：次のラウンドへ進む
+        myRound++;
         resetGameState();
 
-        // Firebase更新
+        // Firebase更新 (ラウンド数も更新)
         db.ref(`rooms/${roomId}/players/${myId}`).update({
             dice: [0,0,0,0,0],
             status: 'Thinking',
             rollCount: 3,
-            finished: false
+            finished: false,
+            round: myRound
         });
+        
+        // メッセージを表示（同期待ち）
+        syncMsg.style.display = 'block';
+        rollBtn.disabled = true;
     }
 
     function listenToRoom() {
         db.ref(`rooms/${roomId}/players`).on('value', snap => {
             const players = snap.val();
-            if(!players) return; // 誰もいない(ありえないが)
+            if(!players) return; 
 
-            // UI更新: 他のプレイヤーを表示
+            // 自分を含めた全員が「同じラウンド(myRound)」にいるか確認
+            let allSynced = true;
+            let activeOpponents = 0;
+            
+            Object.keys(players).forEach(pid => {
+                if(pid !== myId) {
+                    activeOpponents++;
+                    if(players[pid].round < myRound) allSynced = false;
+                }
+            });
+
+            // まだ前のラウンドの人がいれば待機
+            if (!allSynced && activeOpponents > 0) {
+                syncMsg.style.display = 'block';
+                rollBtn.disabled = true; // 操作ブロック
+            } else {
+                syncMsg.style.display = 'none';
+                if(!isGameFinished) rollBtn.disabled = false; // 解除
+            }
+
+            // 描画更新
             opponentsDiv.innerHTML = '';
             let allFinished = true;
             let opponentHands = [];
+            
+            // 参加者チェック
+            let everyoneInCurrentRound = true;
 
             Object.keys(players).forEach(pid => {
+                const p = players[pid];
+                // 相手が自分と同じラウンドか確認（古いデータは無視 or 待機扱い）
+                let isSameRound = (p.round === myRound);
+                if(!isSameRound) everyoneInCurrentRound = false;
+
                 if(pid === myId) return; // 自分はスキップ
 
-                const p = players[pid];
-                // 相手がfinishedならサイコロ公開
-                const showDice = p.finished;
-                renderOpponentCard(pid, p.name, p.status, p.dice, showDice);
+                // 相手がfinishedならサイコロ公開（ただし同じラウンドのみ）
+                const showDice = p.finished && isSameRound;
                 
-                if(!p.finished) allFinished = false;
+                let displayStatus = p.status;
+                if (!isSameRound) displayStatus = "準備中..."; // 前のラウンドにいる人
+
+                renderOpponentCard(pid, p.name, displayStatus, p.dice, showDice, isSameRound);
+                
+                // 判定用: 同じラウンドで、かつ終わっているか
+                if(!isSameRound || !p.finished) allFinished = false;
                 else opponentHands.push({ name: p.name, dice: p.dice });
             });
 
             // 判定ロジック
-            // 自分も相手も全員が終わっていたら結果発表
-            if(allFinished && rollCount === 0 && !isGameFinished) {
-                // 自分も含める
+            // 「全員が今のラウンドにいて」かつ「全員終わった」場合のみ結果発表
+            if(everyoneInCurrentRound && allFinished && rollCount === 0 && !isGameFinished) {
                 opponentHands.push({ name: "あなた", dice: myDice });
                 finishGameMulti(opponentHands);
             }
@@ -372,6 +430,7 @@
         isGameFinished = false;
         resultMsg.innerText = "";
         actionArea.style.display = 'none';
+        syncMsg.style.display = 'none';
         
         rollBtn.disabled = false;
         rollBtn.innerText = "ROLL (3回)";
@@ -399,14 +458,18 @@
         if(heldDice[i]) el.classList.add('held'); else el.classList.remove('held');
     }
 
-    // 相手カードの描画 (複数人対応)
-    function renderOpponentCard(id, name, status, dice, showDice) {
+    function renderOpponentCard(id, name, status, dice, showDice, isActive) {
         let card = document.createElement('div');
         card.className = 'opponent-card';
-        
+        if (!isActive) card.style.opacity = "0.6"; // 準備中の人は薄く
+
         let html = `<div class="op-name">${name}</div>
                     <div class="op-status">${status}</div>
                     <div class="op-dice-row">`;
+        
+        if (!isActive) {
+             html += `<div class="waiting-overlay">待機中</div>`;
+        }
         
         dice.forEach(val => {
             let displayVal = showDice ? val : "?";
@@ -448,20 +511,18 @@
                 dice: myDice, 
                 status: statusText,
                 finished: (rollCount === 0),
-                rollCount: rollCount
+                rollCount: rollCount,
+                round: myRound
             });
         } else {
-            // CPU Process
             runCpuProcess();
         }
     }
 
     function runCpuProcess() {
         if(isGameFinished) return;
-        
-        // CPUのUI更新（簡易アニメーション）
         opponentsDiv.innerHTML = ''; 
-        renderOpponentCard('cpu', "CPU", "Rolling...", [0,0,0,0,0], false);
+        renderOpponentCard('cpu', "CPU", "Rolling...", [0,0,0,0,0], false, true);
 
         if(rollCount === 0) {
             setTimeout(() => {
@@ -473,7 +534,7 @@
                 }
                 
                 opponentsDiv.innerHTML = ''; 
-                renderOpponentCard('cpu', "CPU", "Finish!", cpuD, true);
+                renderOpponentCard('cpu', "CPU", "Finish!", cpuD, true, true);
                 
                 finishGameMulti([
                     { name: "CPU", dice: cpuD },
@@ -497,17 +558,10 @@
         return held;
     }
 
-    // --- Result Logic (Any number of players) ---
+    // --- Result ---
     function finishGameMulti(playersData) {
         isGameFinished = true;
-        
-        // 全員の役を計算
-        let results = playersData.map(p => {
-            let hand = getHand(p.dice);
-            return { name: p.name, hand: hand, raw: p };
-        });
-
-        // 強い順にソート
+        let results = playersData.map(p => { return { name: p.name, hand: getHand(p.dice) }; });
         results.sort((a, b) => {
             if (b.hand.rank !== a.hand.rank) return b.hand.rank - a.hand.rank;
             return b.hand.sum - a.hand.sum;
@@ -515,30 +569,24 @@
 
         let winner = results[0];
         let isWin = (winner.name === "あなた");
-        let isDraw = (!isWin && winner.hand.rank === getHand(myDice).rank && winner.hand.sum === getHand(myDice).sum); // 簡易判定
+        let isDraw = (!isWin && winner.hand.rank === getHand(myDice).rank && winner.hand.sum === getHand(myDice).sum);
 
         let msg = `🏆 1位: ${winner.name} (${winner.hand.name})`;
-        let color = "#e74c3c"; // Lose Red
+        let color = "#e74c3c"; 
 
         if (isWin) {
             msg = "🏆 YOU WIN!!\n1位: あなた";
-            color = "#f1c40f"; // Win Gold
-            // Reward
+            color = "#f1c40f";
             if(gameMode === 'cpu') {
                 let bonus = (cpuLevel - 1) * 20; 
                 let reward = (currentCpuBet * 2) + bonus;
-                mySilver += reward;
-                msg += ` (+${reward - currentCpuBet} Silver)`;
+                mySilver += reward; msg += ` (+${reward - currentCpuBet} Silver)`;
             } else {
-                // Multi: 簡易的に倍返し (本来はポット分配だが今回はシンプルに)
-                myGold += (BET_GOLD * 2); 
-                msg += ` (+${BET_GOLD} Gold)`;
+                myGold += (BET_GOLD * 2); msg += ` (+${BET_GOLD} Gold)`;
             }
-        } else if (isDraw && winner.name.includes("あなた")) { // 自分が同率1位
-             msg = "🤝 DRAW (同率1位)";
-             color = "#fff";
-             if(gameMode === 'cpu') mySilver += currentCpuBet;
-             else myGold += BET_GOLD;
+        } else if (isDraw && winner.name.includes("あなた")) { 
+             msg = "🤝 DRAW (同率1位)"; color = "#fff";
+             if(gameMode === 'cpu') mySilver += currentCpuBet; else myGold += BET_GOLD;
         }
 
         resultMsg.innerText = msg;
