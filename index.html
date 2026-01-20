@@ -8,12 +8,11 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
     <style>
-        /* タップ遅延を消す魔法のCSS */
         body { 
             background-color: #2c3e50; color: white; font-family: 'Segoe UI', sans-serif; 
             text-align: center; display: flex; flex-direction: column; align-items: center; 
             min-height: 100vh; margin: 0; padding-bottom: 50px; user-select: none; 
-            touch-action: manipulation; /* スマホでキビキビ動く設定 */
+            touch-action: manipulation;
         }
         .container { max-width: 600px; width: 95%; padding: 20px; }
         
@@ -49,9 +48,10 @@
         input { padding: 10px; font-size: 1rem; text-align: center; border-radius: 5px; border: 1px solid #ccc; width: 80%; max-width: 250px; }
         .status { margin: 10px; font-size: 1.2rem; color: #f39c12; font-weight: bold; }
         .info-text { font-size: 0.9rem; color: #bdc3c7; margin: 5px 0; }
-        
-        /* 再戦ボタンエリア */
         .action-row { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+        
+        .name-label { font-size: 0.8rem; color: #bdc3c7; display: block; margin-bottom: 2px; }
+        .player-info { display: flex; justify-content: space-between; align-items: center; padding: 0 10px; }
     </style>
 </head>
 <body>
@@ -66,6 +66,10 @@
 
     <div id="lobby-screen" class="screen active">
         <button class="btn btn-small btn-gray" onclick="toggleRuleModal(true)">📖 ルールと役を見る</button>
+        <br><br>
+
+        <label class="name-label">プレイヤー名</label>
+        <input type="text" id="player-name-input" placeholder="名前を入力" onchange="saveName()">
         <br><br>
 
         <h3>🌍 オンライン対戦 (Gold)</h3>
@@ -91,11 +95,11 @@
         <button class="btn btn-orange" onclick="startCpuGame()">CPUと戦う</button>
         
         <br><br>
+        
         <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
             <button class="btn btn-small btn-gray" onclick="resetSilver()" style="border:2px solid #bdc3c7;">
                 🪙 Silverを補充
             </button>
-            
             <button class="btn btn-small btn-green" onclick="resetGold()" style="border:2px solid #f1c40f;">
                 💰 Goldを補充
             </button>
@@ -106,6 +110,10 @@
         <div style="font-size:0.9rem; color:#bdc3c7;" id="game-info">Mode: ---</div>
         
         <div style="background:rgba(0,0,0,0.2); padding:10px; border-radius:10px; margin-top:10px;">
+            <div class="player-info">
+                <span class="name-label" id="op-name-display">Unknown</span>
+                <span class="name-label" id="op-gold-display"></span>
+            </div>
             <div class="status">相手: <span id="op-status">待機中...</span></div>
             <div class="dice-area" id="op-dice-area">
                 <div class="die cpu">?</div><div class="die cpu">?</div><div class="die cpu">?</div><div class="die cpu">?</div><div class="die cpu">?</div>
@@ -123,12 +131,18 @@
             <button id="roll-btn" class="btn btn-green" onclick="rollAction()">ROLL (3回)</button>
         </div>
 
+        <div id="cancel-wait-area" style="margin-top:20px; display:none;">
+            <p>対戦相手を待っています...</p>
+            <button class="btn btn-red" onclick="cancelHost()">部屋を解散して戻る (返金)</button>
+        </div>
+
         <div id="action-area" style="margin-top:20px; display:none;">
             <div class="action-row" id="cpu-actions" style="display:none;">
                 <button class="btn btn-orange" onclick="restartCpuGame()">🔄 もう一回 ($<span id="replay-cost"></span>)</button>
                 <button class="btn btn-gray" onclick="backToLobby()">🏠 ロビーへ</button>
             </div>
             <div class="action-row" id="multi-actions" style="display:none;">
+                <button class="btn btn-orange" onclick="restartMultiGame()">🔄 もう一回 ($100)</button>
                 <button class="btn btn-gray" onclick="backToLobby()">🏠 ロビーへ</button>
             </div>
         </div>
@@ -169,7 +183,6 @@
       appId: "1:730416248000:web:349072ce1b17bcc139e925",
       measurementId: "G-KP58T1CMFN"
     };
-
     // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -177,8 +190,9 @@
 
     // 賭け金設定
     const BET_GOLD = 100;
-    const CPU_BETS = { 1: 20, 2: 50, 3: 100 }; // レベル別賭け金
+    const CPU_BETS = { 1: 20, 2: 50, 3: 100 };
 
+    let myName = "Guest";
     let myGold = 1000;
     let mySilver = 500;
     
@@ -206,13 +220,19 @@
     const opStatus = document.getElementById('op-status');
     const myStatus = document.getElementById('my-status');
     const cpuCostDisplay = document.getElementById('cpu-cost-display');
+    const nameInput = document.getElementById('player-name-input');
+    const cancelWaitArea = document.getElementById('cancel-wait-area');
+    const opNameDisp = document.getElementById('op-name-display');
+    const opGoldDisp = document.getElementById('op-gold-display');
 
     loadWallet();
-    updateCpuCost(); // 初期表示更新
+    updateCpuCost();
 
     function loadWallet() {
         myGold = parseInt(localStorage.getItem('dp_gold') || 1000);
         mySilver = parseInt(localStorage.getItem('dp_silver') || 500);
+        myName = localStorage.getItem('dp_name') || "Player";
+        nameInput.value = myName;
         updateWalletUI();
     }
     function saveWallet() {
@@ -220,36 +240,34 @@
         localStorage.setItem('dp_silver', mySilver);
         updateWalletUI();
     }
+    function saveName() {
+        myName = nameInput.value || "Player";
+        localStorage.setItem('dp_name', myName);
+    }
     function updateWalletUI() {
         document.getElementById('disp-gold').innerText = myGold;
         document.getElementById('disp-silver').innerText = mySilver;
     }
-    // CPU用コインだけリセット
+    
+    // リセット機能（修正済み）
     function resetSilver() {
         if(!confirm("CPU対戦用のコイン(Silver)を\n初期値(500)に戻しますか？")) return;
         mySilver = 500;
         saveWallet();
-        updateWalletUI();
     }
-
-    // 対人用チップだけリセット
     function resetGold() {
         if(!confirm("対人戦用のチップ(Gold)を\n初期値(1000)に戻しますか？")) return;
         myGold = 1000;
         saveWallet();
-        updateWalletUI();
     }
 
     function toggleRuleModal(show) {
         document.getElementById('rule-modal').style.display = show ? 'flex' : 'none';
     }
-
-    // レベル変更時に賭け金表示を変える
     function updateCpuCost() {
         let lv = parseInt(document.getElementById('cpu-level').value);
         cpuCostDisplay.innerText = CPU_BETS[lv];
     }
-
     function backToLobby() {
         if(gameMode === 'multi' && roomId) {
             db.ref(`rooms/${roomId}/${myRole}`).remove();
@@ -259,6 +277,7 @@
 
     // --- 1. CPU戦 ---
     function startCpuGame() {
+        saveName();
         cpuLevel = parseInt(document.getElementById('cpu-level').value);
         currentCpuBet = CPU_BETS[cpuLevel];
 
@@ -272,16 +291,17 @@
         
         startGameCommon();
         
-        // CPU用UI
+        opNameDisp.innerText = "CPU (Level " + cpuLevel + ")";
+        opGoldDisp.innerText = "";
         document.getElementById('cpu-actions').style.display = 'flex';
         document.getElementById('multi-actions').style.display = 'none';
         document.getElementById('replay-cost').innerText = currentCpuBet;
+        cancelWaitArea.style.display = 'none';
 
         opStatus.innerText = "思考中...";
         updateOpDiceVisuals([0,0,0,0,0], false);
     }
 
-    // 再戦処理
     function restartCpuGame() {
         if(mySilver < currentCpuBet) return alert("Silverコインが足りません！");
         mySilver -= currentCpuBet;
@@ -294,6 +314,7 @@
 
     // --- 2. マルチプレイ ---
     function setupMultiplayer(type) {
+        saveName();
         if(myGold < BET_GOLD) return alert("Goldチップが足りません！");
         gameMode = 'multi';
         
@@ -310,16 +331,24 @@
     }
 
     function initMultiDB() {
-        let updates = {};
+        // 名前と所持金も含めて送信
+        let playerData = { 
+            dice: [0,0,0,0,0], 
+            status: 'Thinking', 
+            name: myName, 
+            gold: myGold 
+        };
+
         if(myRole === 'host') {
-            updates = {
+            let updates = {
                 resetSignal: Date.now(),
-                host: { dice: [0,0,0,0,0], status: 'Thinking' },
-                guest: { dice: [0,0,0,0,0], status: 'Waiting' }
+                host: playerData
+                // guestはまだ空
             };
             db.ref('rooms/' + roomId).set(updates).then(onMultiReady);
         } else {
-            db.ref(`rooms/${roomId}/guest`).set({ dice: [0,0,0,0,0], status: 'Thinking' }).then(onMultiReady);
+            // Guestとして参加
+            db.ref(`rooms/${roomId}/guest`).set(playerData).then(onMultiReady);
         }
     }
 
@@ -332,8 +361,91 @@
         
         document.getElementById('cpu-actions').style.display = 'none';
         document.getElementById('multi-actions').style.display = 'flex';
+        
+        // Hostなら「解散ボタン」を表示（相手が来るまで）
+        if(myRole === 'host') {
+            cancelWaitArea.style.display = 'block';
+        } else {
+            cancelWaitArea.style.display = 'none';
+        }
 
         listenToRoom();
+    }
+
+    // ホストが待機中に部屋を消す
+    function cancelHost() {
+        if(!confirm("部屋を解散してロビーに戻りますか？\n(参加費は返金されます)")) return;
+        
+        db.ref('rooms/' + roomId).remove();
+        myGold += BET_GOLD; // 返金
+        saveWallet();
+        window.location.reload();
+    }
+
+    // マルチプレイの再戦
+    function restartMultiGame() {
+        if(myGold < BET_GOLD) return alert("Goldチップが足りません！");
+        
+        myGold -= BET_GOLD;
+        saveWallet();
+
+        // 自分の状態をリセット
+        startGameCommon();
+        
+        // 再戦時はキャンセルボタンは出さない（相手がいるはずなので）
+        cancelWaitArea.style.display = 'none';
+
+        // Firebase更新
+        db.ref(`rooms/${roomId}/${myRole}`).update({
+            dice: [0,0,0,0,0],
+            status: 'Thinking',
+            name: myName,
+            gold: myGold
+        });
+    }
+
+    function listenToRoom() {
+        db.ref('rooms/' + roomId).on('value', snap => {
+            const data = snap.val();
+            // 部屋が消された場合（ホストが解散など）
+            if(!data) {
+                if(!isGameFinished && gameMode === 'multi') {
+                    alert("部屋が解散されました。");
+                    window.location.reload();
+                }
+                return;
+            }
+
+            let opRole = (myRole === 'host') ? 'guest' : 'host';
+            let opData = data[opRole];
+
+            if(opData) {
+                // 相手が来たので解散ボタンを隠す
+                if(myRole === 'host') cancelWaitArea.style.display = 'none';
+
+                // 相手情報の表示
+                opNameDisp.innerText = opData.name || "Unknown";
+                opGoldDisp.innerText = "💰" + (opData.gold || 0);
+
+                opStatus.innerText = opData.status;
+                if(opData.status === "確定！") opDice = opData.dice;
+
+                // 両者確定判定
+                if(rollCount === 0 && opData.status === "確定！" && !isGameFinished) {
+                    updateOpDiceVisuals(opDice, true);
+                    finishGame(myDice, opDice);
+                } else {
+                    // 途中経過（隠して表示）
+                    updateOpDiceVisuals(opData.dice || [0,0,0,0,0], false);
+                }
+            } else {
+                // 相手がいない場合
+                opNameDisp.innerText = "Waiting...";
+                opGoldDisp.innerText = "";
+                opStatus.innerText = "対戦相手待ち...";
+                updateOpDiceVisuals([0,0,0,0,0], false);
+            }
+        });
     }
 
     // --- 共通ゲーム処理 ---
@@ -350,7 +462,7 @@
         rollBtn.disabled = false;
         rollBtn.innerText = "ROLL (3回)";
         rollBtn.className = "btn btn-green";
-        myStatus.innerText = "準備中";
+        myStatus.innerText = "考え中...";
         
         document.getElementById('op-hand-name').innerText = "";
         document.getElementById('my-hand-name').innerText = "";
@@ -400,7 +512,11 @@
         }
 
         if(gameMode === 'multi') {
-            db.ref(`rooms/${roomId}/${myRole}`).update({ dice: myDice, status: statusText });
+            db.ref(`rooms/${roomId}/${myRole}`).update({ 
+                dice: myDice, 
+                status: statusText,
+                gold: myGold // 金額変動も送る
+            });
         } else {
             runCpuProcess();
         }
@@ -421,7 +537,7 @@
                 updateOpDiceVisuals(opDice, true);
                 opStatus.innerText = "確定！";
                 finishGame(myDice, opDice);
-            }, 800); // 演出待ち
+            }, 800);
         } else {
             opStatus.innerText = "相手も考え中...";
         }
@@ -447,25 +563,6 @@
             }
         }
         return held;
-    }
-
-    function listenToRoom() {
-        db.ref('rooms/' + roomId).on('value', snap => {
-            const data = snap.val();
-            if(!data || isGameFinished) return;
-            let opRole = (myRole === 'host') ? 'guest' : 'host';
-            let opData = data[opRole];
-            if(opData) {
-                opStatus.innerText = opData.status;
-                if(opData.status === "確定！") opDice = opData.dice;
-                if(rollCount === 0 && opData.status === "確定！" && !isGameFinished) {
-                    updateOpDiceVisuals(opDice, true);
-                    finishGame(myDice, opDice);
-                } else {
-                    updateOpDiceVisuals(opData.dice || [0,0,0,0,0], false);
-                }
-            }
-        });
     }
 
     function updateOpDiceVisuals(dice, visible) {
@@ -544,4 +641,3 @@
 </script>
 </body>
 </html>
-
