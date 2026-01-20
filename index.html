@@ -54,62 +54,64 @@
 </div>
 
 <script>
-    // ▼▼▼▼▼ ここを自分の設定に書き換える ▼▼▼▼▼
-
-
-// Import the functions you need from the SDKs you need
-
-const firebaseConfig = {
-  apiKey: "AIzaSyD0micFDoWAHMpZdY2IPhjW3v2XLqloJX8",
-  authDomain: "dice-poker-e9021.firebaseapp.com",
-  databaseURL: "https://dice-poker-e9021-default-rtdb.firebaseio.com",
-  projectId: "dice-poker-e9021",
-  storageBucket: "dice-poker-e9021.firebasestorage.app",
-  messagingSenderId: "730416248000",
-  appId: "1:730416248000:web:349072ce1b17bcc139e925",
-  measurementId: "G-KP58T1CMFN"
-};
-
+    // ▼▼▼▼▼ ここだけ自分の設定に書き換えてください ▼▼▼▼▼
+    // ※ import ... などの行は入れないで、const firebaseConfig = { ... }; だけ残してください
+    const firebaseConfig = {
+        apiKey: "AIzaSy.......",
+        authDomain: ".......firebaseapp.com",
+        databaseURL: "https://.......firebaseio.com",
+        projectId: ".......",
+        storageBucket: ".......",
+        messagingSenderId: ".......",
+        appId: "......."
+    };
     // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    // Firebase初期化
-    if (!firebase.apps.length) {
-        firebase.initializeApp(firebaseConfig);
+    // Firebase初期化 (エラーが出ない書き方)
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+    } catch (error) {
+        console.error("Firebaseの設定ミスがあります:", error);
+        alert("Firebaseの設定が間違っているようです。コンソールを確認してください。");
     }
+    
     const db = firebase.database();
 
     let roomId = null;
-    let myRole = null; // 'host' or 'guest'
+    let myRole = null;
     let myDice = [1,1,1,1,1];
     let heldDice = [false,false,false,false,false];
     let rollCount = 3;
 
-    // 画面切り替え
     const setupScreen = document.getElementById('setup-screen');
     const gameScreen = document.getElementById('game-screen');
     const myDiceDiv = document.getElementById('my-dice');
     const opDiceDiv = document.getElementById('opponent-dice');
 
-    // ----------------------
-    // 部屋の作成・入室処理
-    // ----------------------
+    // 部屋作成
     function createRoom() {
-        // ランダムな部屋ID (数字4桁)
         roomId = Math.floor(1000 + Math.random() * 9000).toString();
         myRole = 'host';
         
-        // DBに部屋を作成
+        // 書き込みテスト
         db.ref('rooms/' + roomId).set({
             host: { dice: [0,0,0,0,0], status: 'Thinking' },
             guest: { dice: [0,0,0,0,0], status: 'Waiting' },
             turn: 1
+        }).then(() => {
+            console.log("部屋作成成功！");
+            document.getElementById('my-room-id').innerText = "あなたの部屋ID: " + roomId + "\n友達に教えてあげて！";
+            listenToRoom();
+            startGameUI();
+        }).catch((error) => {
+            alert("エラー：データベースに書き込めません。\nFirebaseのルール設定を確認してください。");
+            console.error(error);
         });
-
-        document.getElementById('my-room-id').innerText = "あなたの部屋ID: " + roomId + "\n友達に教えてあげて！";
-        listenToRoom();
-        startGameUI();
     }
 
+    // 部屋入室
     function joinRoom() {
         roomId = document.getElementById('room-id-input').value;
         if (!roomId) return alert("部屋IDを入れてね");
@@ -124,9 +126,6 @@ const firebaseConfig = {
         initMyDice();
     }
 
-    // ----------------------
-    // ゲームロジック
-    // ----------------------
     function initMyDice() {
         myDiceDiv.innerHTML = '';
         for(let i=0; i<5; i++){
@@ -147,16 +146,12 @@ const firebaseConfig = {
 
     function rollAction() {
         if(rollCount <= 0) return;
-
-        // サイコロを振る
         for(let i=0; i<5; i++){
             if(!heldDice[i]) myDice[i] = Math.floor(Math.random()*6)+1;
         }
-        
         rollCount--;
         updateMyVisuals();
 
-        // Firebaseに自分の状態を送信！
         let statusText = (rollCount === 0) ? "確定！" : "考え中...";
         db.ref(`rooms/${roomId}/${myRole}`).set({
             dice: myDice,
@@ -175,30 +170,20 @@ const firebaseConfig = {
         for(let i=0; i<5; i++) dies[i].innerText = myDice[i];
     }
 
-    // ----------------------
-    // リアルタイム通信 (受信)
-    // ----------------------
     function listenToRoom() {
-        // 部屋全体の変更を監視する
         db.ref('rooms/' + roomId).on('value', (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
-
-            // 相手のデータを取得
             let opponentRole = (myRole === 'host') ? 'guest' : 'host';
             let opData = data[opponentRole];
 
             if (opData) {
                 document.getElementById('opponent-status').innerText = opData.status;
-                
-                // 相手のサイコロを表示
                 opDiceDiv.innerHTML = '';
                 if (opData.dice) {
                     opData.dice.forEach(val => {
                         let d = document.createElement('div');
                         d.className = 'die';
-                        // 相手が「確定」するまでは中身を隠す（?にする）仕様
-                        // 見せたいなら val をそのまま表示
                         if (opData.status === "確定！") {
                             d.innerText = val;
                             d.style.backgroundColor = "#bdc3c7";
