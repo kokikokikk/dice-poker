@@ -10,9 +10,11 @@
     <style>
         body { background-color: #2c3e50; color: white; font-family: sans-serif; text-align: center; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; }
         .container { max-width: 600px; width: 95%; padding: 20px; }
-        .btn { padding: 10px 20px; border-radius: 5px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; }
+        .btn { padding: 10px 20px; border-radius: 5px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; }
         .btn-green { background-color: #27ae60; color: white; }
         .btn-blue { background-color: #2980b9; color: white; }
+        .btn-red { background-color: #c0392b; color: white; display: none; margin-top: 20px; width: 100%; } /* 次へボタン */
+        
         input { padding: 10px; font-size: 1rem; text-align: center; }
         .dice-area { display: flex; justify-content: center; gap: 10px; margin: 20px 0; min-height: 60px; }
         .die { width: 50px; height: 50px; background: white; color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; border: 3px solid transparent; }
@@ -21,18 +23,10 @@
         #setup-screen, #game-screen { display: none; }
         .active { display: block !important; }
         
-        /* 部屋IDを目立たせるスタイル */
-        .room-display {
-            background-color: rgba(0,0,0,0.3);
-            padding: 5px 15px;
-            border-radius: 20px;
-            display: inline-block;
-            margin-bottom: 20px;
-            border: 2px solid #f1c40f;
-            color: #f1c40f;
-            font-weight: bold;
-            font-size: 1.2rem;
-        }
+        .room-display { background-color: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 20px; display: inline-block; margin-bottom: 20px; border: 2px solid #f1c40f; color: #f1c40f; font-weight: bold; font-size: 1.2rem; }
+        
+        /* 勝敗表示用 */
+        #result-msg { font-size: 2rem; font-weight: bold; margin: 20px 0; min-height: 3rem; text-shadow: 2px 2px 0 #000; }
     </style>
 </head>
 <body>
@@ -51,18 +45,25 @@
 
     <div id="game-screen">
         <div id="game-room-display" class="room-display">ID: ----</div>
+        
+        <div id="result-msg"></div>
 
         <div class="status">相手: <span id="opponent-status">待機中...</span></div>
         <div class="dice-area" id="opponent-dice">
             <div class="die">?</div><div class="die">?</div><div class="die">?</div><div class="die">?</div><div class="die">?</div>
         </div>
+        <div id="op-hand-name" style="font-size:0.9rem; color:#bdc3c7;"></div>
 
-        <hr style="opacity:0.3">
+        <hr style="opacity:0.3; margin: 20px 0;">
         
         <div class="status">あなた: <span id="my-status">準備中</span></div>
         <div class="dice-area" id="my-dice"></div>
+        <div id="my-hand-name" style="font-size:0.9rem; color:#f1c40f; font-weight:bold;"></div>
         
         <button id="roll-btn" class="btn btn-green" onclick="rollAction()">ROLL (3回)</button>
+        
+        <button id="next-btn" class="btn btn-red" onclick="resetGame()">次のゲームへ (RESTART)</button>
+        
         <p id="msg">クリックしてHOLD / ROLLで確定</p>
     </div>
 </div>
@@ -82,10 +83,7 @@
 
     // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-    // Firebase初期化
-    if (!firebase.apps.length) {
-        firebase.initializeApp(firebaseConfig);
-    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
     let roomId = null;
@@ -93,45 +91,63 @@
     let myDice = [1,1,1,1,1];
     let heldDice = [false,false,false,false,false];
     let rollCount = 3;
+    let isGameFinished = false;
 
     const setupScreen = document.getElementById('setup-screen');
     const gameScreen = document.getElementById('game-screen');
     const myDiceDiv = document.getElementById('my-dice');
     const opDiceDiv = document.getElementById('opponent-dice');
     const roomDisplay = document.getElementById('game-room-display');
+    const resultMsg = document.getElementById('result-msg');
+    const nextBtn = document.getElementById('next-btn');
 
     function createRoom() {
         roomId = Math.floor(1000 + Math.random() * 9000).toString();
         myRole = 'host';
-        
-        db.ref('rooms/' + roomId).set({
-            host: { dice: [0,0,0,0,0], status: 'Thinking' },
-            guest: { dice: [0,0,0,0,0], status: 'Waiting' },
-            turn: 1
-        }).then(() => {
-            // ゲーム画面にもIDを表示する
-            roomDisplay.innerText = "部屋ID: " + roomId;
-            listenToRoom();
-            startGameUI();
-        }).catch((error) => {
-            alert("エラー：書き込み失敗。Firebaseのルールを確認してください。");
-        });
+        resetDB(); // 初期化してスタート
     }
 
     function joinRoom() {
         roomId = document.getElementById('room-id-input').value;
         if (!roomId) return alert("部屋IDを入れてね");
         myRole = 'guest';
-        
-        // ゲスト側もIDを表示しておく
         roomDisplay.innerText = "部屋ID: " + roomId;
         listenToRoom();
         startGameUI();
     }
 
+    // データベースを初期状態にする（次のゲームもこれを使う）
+    function resetDB() {
+        db.ref('rooms/' + roomId).set({
+            host: { dice: [0,0,0,0,0], status: 'Thinking' },
+            guest: { dice: [0,0,0,0,0], status: 'Waiting' },
+            resetSignal: Date.now() // リセット合図
+        }).then(() => {
+            roomDisplay.innerText = "部屋ID: " + roomId;
+            listenToRoom();
+            startGameUI();
+        });
+    }
+    
+    // 全員リセットボタンを押せるようにする
+    function resetGame() {
+        resetDB();
+    }
+
     function startGameUI() {
         setupScreen.classList.remove('active');
         gameScreen.classList.add('active');
+        // ローカル変数のリセット
+        rollCount = 3;
+        heldDice = [false,false,false,false,false];
+        isGameFinished = false;
+        resultMsg.innerText = "";
+        nextBtn.style.display = "none";
+        document.getElementById('roll-btn').disabled = false;
+        document.getElementById('roll-btn').style.backgroundColor = "#27ae60";
+        document.getElementById('roll-btn').innerText = "ROLL (3回)";
+        document.getElementById('op-hand-name').innerText = "";
+        document.getElementById('my-hand-name').innerText = "";
         initMyDice();
     }
 
@@ -147,10 +163,9 @@
     }
 
     function toggleHold(i, el) {
-        if(rollCount <= 0 || rollCount === 3) return;
+        if(rollCount <= 0 || rollCount === 3 || isGameFinished) return;
         heldDice[i] = !heldDice[i];
-        if(heldDice[i]) el.classList.add('held');
-        else el.classList.remove('held');
+        if(heldDice[i]) el.classList.add('held'); else el.classList.remove('held');
     }
 
     function rollAction() {
@@ -177,33 +192,89 @@
     function updateMyVisuals() {
         let dies = myDiceDiv.children;
         for(let i=0; i<5; i++) dies[i].innerText = myDice[i];
+        if(rollCount < 3) document.getElementById('my-hand-name').innerText = getHandName(myDice).name;
     }
 
     function listenToRoom() {
         db.ref('rooms/' + roomId).on('value', (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
+
+            // リセット信号を検知したら画面をリセット
+            if (data.resetSignal && isGameFinished) {
+                // 自分がまだリセット処理してない場合のみ再起動
+                startGameUI();
+                return; 
+            }
+
             let opponentRole = (myRole === 'host') ? 'guest' : 'host';
             let opData = data[opponentRole];
+            let myData = data[myRole];
 
             if (opData) {
                 document.getElementById('opponent-status').innerText = opData.status;
                 opDiceDiv.innerHTML = '';
-                if (opData.dice) {
-                    opData.dice.forEach(val => {
-                        let d = document.createElement('div');
-                        d.className = 'die';
-                        if (opData.status === "確定！") {
-                            d.innerText = val;
-                            d.style.backgroundColor = "#bdc3c7";
-                        } else {
-                            d.innerText = "?";
-                        }
-                        opDiceDiv.appendChild(d);
-                    });
+                opData.dice.forEach(val => {
+                    let d = document.createElement('div');
+                    d.className = 'die';
+                    if (opData.status === "確定！") {
+                        d.innerText = val;
+                        d.style.backgroundColor = "#bdc3c7";
+                    } else {
+                        d.innerText = "?";
+                    }
+                    opDiceDiv.appendChild(d);
+                });
+
+                // 勝敗判定：両方とも「確定！」になったら
+                if (opData.status === "確定！" && myData.status === "確定！" && !isGameFinished) {
+                    isGameFinished = true;
+                    judgeWinner(myData.dice, opData.dice);
                 }
             }
         });
+    }
+
+    // 勝敗判定ロジック
+    function judgeWinner(myD, opD) {
+        let myHand = getHandName(myD);
+        let opHand = getHandName(opD);
+        
+        document.getElementById('my-hand-name').innerText = myHand.name;
+        document.getElementById('op-hand-name').innerText = opHand.name;
+        
+        if (myHand.rank > opHand.rank) {
+            resultMsg.innerText = "YOU WIN!! 🏆";
+            resultMsg.style.color = "#f1c40f";
+        } else if (myHand.rank < opHand.rank) {
+            resultMsg.innerText = "YOU LOSE... 😢";
+            resultMsg.style.color = "#e74c3c";
+        } else {
+            resultMsg.innerText = "DRAW (引き分け)";
+            resultMsg.style.color = "#fff";
+        }
+        
+        // 次へボタンを表示
+        nextBtn.style.display = "block";
+    }
+
+    // 役判定 (点数計算)
+    function getHandName(dice) {
+        if(!dice) return {rank:0, name:""};
+        let counts = {};
+        dice.forEach(x => { counts[x] = (counts[x] || 0) + 1; });
+        let values = Object.values(counts).sort((a,b) => b - a);
+        let uniqueDice = [...new Set(dice)].sort().join('');
+        let isStraight = (uniqueDice === '12345' || uniqueDice === '23456');
+
+        if (values[0] === 5) return { rank: 8, name: "Five of a Kind! (5カード)" };
+        if (values[0] === 4) return { rank: 7, name: "Four of a Kind (4カード)" };
+        if (values[0] === 3 && values[1] === 2) return { rank: 6, name: "Full House (フルハウス)" };
+        if (isStraight) return { rank: 5, name: "Straight (ストレート)" };
+        if (values[0] === 3) return { rank: 4, name: "Three of a Kind (3カード)" };
+        if (values[0] === 2 && values[1] === 2) return { rank: 3, name: "Two Pair (2ペア)" };
+        if (values[0] === 2) return { rank: 2, name: "One Pair (1ペア)" };
+        return { rank: 1, name: "High Card (ブタ)" };
     }
 </script>
 </body>
