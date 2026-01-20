@@ -13,7 +13,8 @@
         .btn { padding: 10px 20px; border-radius: 5px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; }
         .btn-green { background-color: #27ae60; color: white; }
         .btn-blue { background-color: #2980b9; color: white; }
-        .btn-red { background-color: #c0392b; color: white; display: none; margin-top: 20px; width: 100%; } /* 次へボタン */
+        .btn-red { background-color: #e74c3c; color: white; display: none; margin-top: 20px; width: 100%; font-size: 1.2rem; padding: 15px; box-shadow: 0 5px 0 #c0392b; }
+        .btn-red:active { transform: translateY(5px); box-shadow: none; }
         
         input { padding: 10px; font-size: 1rem; text-align: center; }
         .dice-area { display: flex; justify-content: center; gap: 10px; margin: 20px 0; min-height: 60px; }
@@ -70,17 +71,15 @@
 
 <script>
     // ▼▼▼▼▼ ここだけ自分の設定に書き換えてください ▼▼▼▼▼
-     const firebaseConfig = {
-      apiKey: "AIzaSyD0micFDoWAHMpZdY2IPhjW3v2XLqloJX8",
-      authDomain: "dice-poker-e9021.firebaseapp.com",
-      databaseURL: "https://dice-poker-e9021-default-rtdb.firebaseio.com",
-      projectId: "dice-poker-e9021",
-      storageBucket: "dice-poker-e9021.firebasestorage.app",
-      messagingSenderId: "730416248000",
-      appId: "1:730416248000:web:349072ce1b17bcc139e925",
-      measurementId: "G-KP58T1CMFN"
+    const firebaseConfig = {
+        apiKey: "AIzaSy.......",
+        authDomain: ".......firebaseapp.com",
+        databaseURL: "https://.......firebaseio.com",
+        projectId: ".......",
+        storageBucket: ".......",
+        messagingSenderId: ".......",
+        appId: "......."
     };
-
     // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -92,6 +91,7 @@
     let heldDice = [false,false,false,false,false];
     let rollCount = 3;
     let isGameFinished = false;
+    let lastResetTime = 0; // 重複リセットを防ぐためのタイムスタンプ
 
     const setupScreen = document.getElementById('setup-screen');
     const gameScreen = document.getElementById('game-screen');
@@ -104,7 +104,7 @@
     function createRoom() {
         roomId = Math.floor(1000 + Math.random() * 9000).toString();
         myRole = 'host';
-        resetDB(); // 初期化してスタート
+        resetDB(); 
     }
 
     function joinRoom() {
@@ -116,20 +116,23 @@
         startGameUI();
     }
 
-    // データベースを初期状態にする（次のゲームもこれを使う）
+    // データベースを初期状態にする
     function resetDB() {
+        // 現在時刻をリセット信号として送る
+        let now = Date.now();
         db.ref('rooms/' + roomId).set({
             host: { dice: [0,0,0,0,0], status: 'Thinking' },
             guest: { dice: [0,0,0,0,0], status: 'Waiting' },
-            resetSignal: Date.now() // リセット合図
+            resetSignal: now 
         }).then(() => {
             roomDisplay.innerText = "部屋ID: " + roomId;
+            // ホスト側も自分の lastResetTime を更新しておく
+            lastResetTime = now;
             listenToRoom();
             startGameUI();
         });
     }
     
-    // 全員リセットボタンを押せるようにする
     function resetGame() {
         resetDB();
     }
@@ -137,17 +140,20 @@
     function startGameUI() {
         setupScreen.classList.remove('active');
         gameScreen.classList.add('active');
-        // ローカル変数のリセット
+        
         rollCount = 3;
         heldDice = [false,false,false,false,false];
         isGameFinished = false;
+        
         resultMsg.innerText = "";
         nextBtn.style.display = "none";
+        
         document.getElementById('roll-btn').disabled = false;
         document.getElementById('roll-btn').style.backgroundColor = "#27ae60";
         document.getElementById('roll-btn').innerText = "ROLL (3回)";
         document.getElementById('op-hand-name').innerText = "";
         document.getElementById('my-hand-name').innerText = "";
+        
         initMyDice();
     }
 
@@ -200,9 +206,9 @@
             const data = snapshot.val();
             if (!data) return;
 
-            // リセット信号を検知したら画面をリセット
-            if (data.resetSignal && isGameFinished) {
-                // 自分がまだリセット処理してない場合のみ再起動
+            // 【重要】新しいリセット信号が来た時だけリセットを実行する
+            if (data.resetSignal && data.resetSignal > lastResetTime) {
+                lastResetTime = data.resetSignal; // 時刻を更新
                 startGameUI();
                 return; 
             }
@@ -214,19 +220,24 @@
             if (opData) {
                 document.getElementById('opponent-status').innerText = opData.status;
                 opDiceDiv.innerHTML = '';
-                opData.dice.forEach(val => {
-                    let d = document.createElement('div');
-                    d.className = 'die';
-                    if (opData.status === "確定！") {
-                        d.innerText = val;
-                        d.style.backgroundColor = "#bdc3c7";
-                    } else {
-                        d.innerText = "?";
-                    }
-                    opDiceDiv.appendChild(d);
-                });
+                
+                // 相手のサイコロ表示
+                if (opData.dice) {
+                    opData.dice.forEach(val => {
+                        let d = document.createElement('div');
+                        d.className = 'die';
+                        // 相手が確定、または既に勝負がついている場合はオープン
+                        if (opData.status === "確定！" || isGameFinished) {
+                            d.innerText = val;
+                            d.style.backgroundColor = "#bdc3c7";
+                        } else {
+                            d.innerText = "?";
+                        }
+                        opDiceDiv.appendChild(d);
+                    });
+                }
 
-                // 勝敗判定：両方とも「確定！」になったら
+                // 勝敗判定：両方「確定」で、まだ勝負がついていない時だけ実行
                 if (opData.status === "確定！" && myData.status === "確定！" && !isGameFinished) {
                     isGameFinished = true;
                     judgeWinner(myData.dice, opData.dice);
