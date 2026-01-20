@@ -13,7 +13,6 @@
         .btn { padding: 10px 20px; border-radius: 5px; border: none; font-size: 1rem; cursor: pointer; margin: 5px; font-weight: bold; }
         .btn-green { background-color: #27ae60; color: white; }
         .btn-blue { background-color: #2980b9; color: white; }
-        /* 次へボタン */
         .btn-red { background-color: #e74c3c; color: white; display: none; margin-top: 20px; width: 100%; font-size: 1.2rem; padding: 15px; box-shadow: 0 5px 0 #c0392b; }
         .btn-red:active { transform: translateY(5px); box-shadow: none; }
         
@@ -27,18 +26,11 @@
         
         .room-display { background-color: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 20px; display: inline-block; margin-bottom: 10px; border: 2px solid #f1c40f; color: #f1c40f; font-weight: bold; font-size: 1.2rem; }
         
-        /* チップ表示のデザイン */
-        .chip-display {
-            background-color: #f39c12;
-            color: #2c3e50;
-            padding: 10px 20px;
-            border-radius: 50px;
-            font-size: 1.5rem;
-            font-weight: bold;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            display: inline-block;
-        }
+        /* 自分のチップ表示 */
+        .chip-display { background-color: #f39c12; color: #2c3e50; padding: 10px 20px; border-radius: 50px; font-size: 1.5rem; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: inline-block; }
+        
+        /* 相手のチップ表示（少し小さめ） */
+        .chip-display-small { font-size: 1rem; color: #bdc3c7; margin-bottom: 5px; font-weight: bold; }
         
         #result-msg { font-size: 2rem; font-weight: bold; margin: 20px 0; min-height: 3rem; text-shadow: 2px 2px 0 #000; }
     </style>
@@ -68,6 +60,7 @@
         
         <div id="result-msg"></div>
 
+        <div class="chip-display-small">相手の所持金: $<span id="opponent-chips">---</span></div>
         <div class="status">相手: <span id="opponent-status">待機中...</span></div>
         <div class="dice-area" id="opponent-dice">
             <div class="die">?</div><div class="die">?</div><div class="die">?</div><div class="die">?</div><div class="die">?</div>
@@ -90,7 +83,7 @@
 
 <script>
     // ▼▼▼▼▼ ここだけ自分の設定に書き換えてください ▼▼▼▼▼
-    const firebaseConfig = {
+   const firebaseConfig = {
       apiKey: "AIzaSyD0micFDoWAHMpZdY2IPhjW3v2XLqloJX8",
       authDomain: "dice-poker-e9021.firebaseapp.com",
       databaseURL: "https://dice-poker-e9021-default-rtdb.firebaseio.com",
@@ -115,8 +108,9 @@
     let lastResetTime = 0;
     
     // チップ管理
-    let myChips = 1000; // 初期値
-    const BET_AMOUNT = 100; // 賭け金
+    let myChips = 1000;
+    let opponentChipsValue = 1000; // 相手のチップを一時保存する変数
+    const BET_AMOUNT = 100;
 
     const setupScreen = document.getElementById('setup-screen');
     const gameScreen = document.getElementById('game-screen');
@@ -127,8 +121,8 @@
     const nextBtn = document.getElementById('next-btn');
     const titleChips = document.getElementById('title-chips');
     const gameChips = document.getElementById('game-chips');
+    const opChipsDisplay = document.getElementById('opponent-chips');
 
-    // 起動時に保存されたチップを読み込む
     loadChips();
 
     function loadChips() {
@@ -171,24 +165,36 @@
         if (!roomId) return alert("部屋IDを入れてね");
         myRole = 'guest';
         roomDisplay.innerText = "部屋ID: " + roomId;
+        
+        // ゲスト参加時に自分のチップ情報を書き込む（ここ重要！）
+        db.ref(`rooms/${roomId}/guest`).update({
+            chips: myChips
+        });
+        
         listenToRoom();
         startGameUI();
     }
 
     function resetDB() {
         let now = Date.now();
+        
+        // リセット時、相手のチップ情報が消えないように「最後に覚えている相手の額」を使う
+        let hostChips = (myRole === 'host') ? myChips : opponentChipsValue;
+        let guestChips = (myRole === 'guest') ? myChips : opponentChipsValue;
+
         db.ref('rooms/' + roomId).set({
-            host: { dice: [0,0,0,0,0], status: 'Thinking' },
-            guest: { dice: [0,0,0,0,0], status: 'Waiting' },
+            host: { dice: [0,0,0,0,0], status: 'Thinking', chips: hostChips },
+            guest: { dice: [0,0,0,0,0], status: 'Waiting', chips: guestChips },
             resetSignal: now 
         }).then(() => {
             roomDisplay.innerText = "部屋ID: " + roomId;
+            // ホストの場合は自分のlastResetTimeを更新しておく
+            if(myRole === 'host') lastResetTime = now;
             listenToRoom();
         });
     }
     
     function resetGame() {
-        // 次のゲームに行く前にチップチェック
         if(myChips < BET_AMOUNT) {
             alert("破産しました...！もう賭けられません。\nトップに戻ってリセットしてください。");
             location.reload();
@@ -243,9 +249,12 @@
         updateMyVisuals();
 
         let statusText = (rollCount === 0) ? "確定！" : "考え中...";
+        
+        // 自分のチップ情報も一緒に送信する
         db.ref(`rooms/${roomId}/${myRole}`).set({
             dice: myDice,
-            status: statusText
+            status: statusText,
+            chips: myChips
         });
 
         document.getElementById('roll-btn').innerText = (rollCount > 0) ? `REROLL (あと${rollCount}回)` : "勝負待ち...";
@@ -277,6 +286,12 @@
             let myData = data[myRole];
 
             if (opData) {
+                // 相手のチップ情報を表示＆記憶
+                if (opData.chips !== undefined) {
+                    opponentChipsValue = opData.chips;
+                    opChipsDisplay.innerText = opData.chips;
+                }
+                
                 document.getElementById('opponent-status').innerText = opData.status;
                 opDiceDiv.innerHTML = '';
                 
@@ -297,7 +312,7 @@
                 if (opData.status === "確定！" && myData.status === "確定！" && !isGameFinished) {
                     isGameFinished = true;
                     
-                    // 手札公開のために強制再描画
+                    // 強制再描画（手札オープン）
                     opDiceDiv.innerHTML = '';
                     opData.dice.forEach(val => {
                         let d = document.createElement('div');
@@ -320,7 +335,7 @@
         document.getElementById('my-hand-name').innerText = myHand.name;
         document.getElementById('op-hand-name').innerText = opHand.name;
         
-        let winAmount = BET_AMOUNT; // 勝ったら+100、負けたら-100
+        let winAmount = BET_AMOUNT;
 
         if (myHand.rank > opHand.rank) {
             resultMsg.innerText = "YOU WIN!! (+$" + winAmount + ") 🏆";
@@ -335,8 +350,9 @@
             resultMsg.style.color = "#fff";
         }
         
-        // 勝敗が決まった瞬間に保存！
         saveChips();
+        // 勝敗が決まったら、最新のチップ額をDBに送って相手に見せる
+        db.ref(`rooms/${roomId}/${myRole}/chips`).set(myChips);
         
         nextBtn.style.display = "block";
     }
